@@ -1,0 +1,6 @@
+BasedOnStyle: google
+ColumnLimit: 120
+IndentWidth: 2
+AllowShortIfStatementsOnASingleLine: Never
+PackConstructorInitializers: Never
+BreakConstructorInitializers: BeforeComma

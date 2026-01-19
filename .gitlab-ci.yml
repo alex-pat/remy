@@ -1,0 +1,22 @@
+image: ubuntu:jammy
+
+build:
+  stage: build
+  script:
+    - apt update
+    - apt install -y software-properties-common
+    - add-apt-repository -y ppa:ubuntu-toolchain-r/test
+    - apt install -y cmake wget lsb-release software-properties-common gnupg g++-13 git
+    - wget https://apt.llvm.org/llvm.sh
+    - chmod +x llvm.sh
+    - ./llvm.sh 17 all
+    - ln -sf $(which clang-17) /usr/bin/clang
+    - ln -sf $(which clang++-17) /usr/bin/clang++
+    - wget https://archives.boost.io/release/1.89.0/source/boost_1_89_0.tar.gz
+    - tar xf boost_1_89_0.tar.gz
+    - cd boost_1_89_0
+    - ./bootstrap.sh --with-libraries=program_options,system,thread,atomic,chrono,date_time,random,coroutine --with-toolset=clang
+    - ./b2 install --prefix=/usr/ --no-cmake-config --stagedir=/usr/ toolset=clang link=shared runtime-link=shared variant=release
+    - cd -
+    - cmake -S . -B build -DCMAKE_CXX_FLAGS="-Wall -Werror" -DCMAKE_CXX_COMPILER=clang++-17 -DBUILD_THREAD=ON -DBUILD_SHMEM=ON
+    - cmake --build build -j $(nproc)

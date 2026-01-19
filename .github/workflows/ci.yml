@@ -1,0 +1,128 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+  pull_request:
+    branches:
+      - main
+      - dev
+
+jobs:
+  build-linux:
+    name: Build for ${{ matrix.config.name }}
+    runs-on: ${{ matrix.config.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - name: Linux x86_64
+            target: linux-x86_64
+            artifact: remy-linux-x86_64
+            os: ubuntu-latest
+          - name: Raspberry Pi (aarch64)
+            target: rpi-aarch64
+            artifact: remy-rpi-aarch64
+            os: ubuntu-24.04-arm
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install dependencies and toolchains
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake ninja-build clang lld libboost-all-dev
+
+    - name: Configure CMake
+      run: |
+        # Common flags for a C++20, static release build
+        CMAKE_ARGS="-DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=20 -DCMAKE_CXX_EXTENSIONS=OFF"
+        set -x
+        LINKER_FLAGS="-DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld -static-libgcc -static-libstdc++"
+        
+        # Set Clang as the compiler for this job
+        export CC=clang
+        export CXX=clang++
+
+        # Use Ninja for faster builds
+        cmake -B build -G Ninja $CMAKE_ARGS "$LINKER_FLAGS"
+
+    - name: Build with CMake
+      run: cmake --build build --config Release -j $(nproc)
+
+    - name: Prepare Artifacts for Upload
+      run: |
+        mkdir -p artifact/
+        # Find all ELF executable files in the build directory
+        find build -type f -not -path "*/CMakeFiles/*" -not -name "*.sh" -exec file {} + | grep -E ": *ELF " | cut -d: -f1 | xargs -I {} cp {} artifact/
+
+    - name: Upload Binaries as Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.config.artifact }}
+        path: artifact/
+        if-no-files-found: error
+
+  build-android:
+    name: Build for Android Termux ${{ matrix.target_arch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target_arch: [aarch64, arm]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Termux build environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git curl proot unzip wget
+          git clone https://github.com/termux/termux-packages.git
+          cd termux-packages
+          ./scripts/setup-ubuntu.sh
+          ./scripts/setup-android-sdk.sh
+
+      - name: Build Termux package
+        run: |
+          cd termux-packages
+          
+          # Create a package for our app
+          mkdir -p packages/remy
+          
+          # Create the build.sh script
+          cat <<'EOF' > packages/remy/build.sh
+          TERMUX_PKG_HOMEPAGE=https://github.com/alex-pat/remy
+          TERMUX_PKG_DESCRIPTION="A toy remote file access"
+          TERMUX_PKG_LICENSE="WTFPL"
+          TERMUX_PKG_MAINTAINER="@alex-pat"
+          TERMUX_PKG_VERSION=1.0.0
+          TERMUX_PKG_SRCURL=file://${{ github.workspace }}
+          TERMUX_PKG_BUILD_IN_SRC=true
+          TERMUX_PKG_BUILD_DEPENDS="boost-static, boost-headers, libc++"
+          
+          termux_step_pre_configure() {
+               export TERMUX_PKG_EXTRA_CONFIGURE_ARGS+=" -DCMAKE_CXX_COMPILER_CLANG_SCAN_DEPS=${TERMUX_STANDALONE_TOOLCHAIN}/bin/clang-scan-deps"
+               export CXXFLAGS+=" -stdlib=libc++ -fexperimental-library -D__USE_GNU -DANDROID"
+               export LDFLAGS+=" -static-libstdc++"
+          }
+          EOF
+          
+          # Build the package for aarch64
+          ./build-package.sh -I -a ${{ matrix.target_arch }} remy
+          
+      - name: Prepare Artifacts for Upload
+        run: |
+          mkdir -p artifact/
+          # Find all ELF executable files in the build directory
+          find ~/.termux-build/remy/src/ -type f -not -path "*/CMakeFiles/*" -not -name "*.sh" -exec file {} + | grep -E ": *ELF " | cut -d: -f1 | xargs -I {} cp {} artifact/
+        
+      - name: Upload Binaries as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: remy-android-${{ matrix.target_arch }}
+          path: artifact/
+          if-no-files-found: error
