@@ -29,7 +29,7 @@ std::optional<int> parse_opts(int argc, const char *argv[], remy::Config &conf) 
   desc.add_options()
       ("help,h", "Help screen")
       ("addr,a", value<std::string>(&conf.addr)->default_value("127.0.0.1"), "Addr")
-      ("port,p", value<uint16_t>(&conf.port)->default_value(8000), "Port")
+      ("port,p", value<uint16_t>(&conf.port)->default_value(remy::REMY_DEFAULT_PORT), "Port")
       ("dir,C", value<std::string>(&dir), "Directory")
       ("log-file,o", value<std::string>(&conf.log_path), "Log file");
   // clang-format on

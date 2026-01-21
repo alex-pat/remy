@@ -142,4 +142,6 @@ struct WatcherInfo {
   std::string cur_file;
 };
 
+constexpr uint16_t REMY_DEFAULT_PORT = 7312;
+
 }  // namespace remy

@@ -20,14 +20,14 @@ Usage:
 Remy server:
   -h [ --help ]                  Help screen
   -a [ --addr ] arg (=127.0.0.1) Addr
-  -p [ --port ] arg (=8000)      Port
+  -p [ --port ] arg (=7312)      Port
   -o [ --log-file ] arg          Log file
 $ build/net/remy-client -h
 Usage:
 Remy client:
   -h [ --help ]                  Help screen
   -a [ --addr ] arg (=127.0.0.1) Addr
-  -p [ --port ] arg (=8000)      Port
+  -p [ --port ] arg (=7312)      Port
   -C [ --dir ] arg               Directory
   -o [ --log-file ] arg          Log file
 ```
