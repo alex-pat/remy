@@ -15,6 +15,7 @@
 #include "remy/common.hpp"
 #include "remy/logger.hpp"
 #include "remy/serde.hpp"
+#include "remy/sys.hpp"
 
 namespace remy {
 
@@ -55,6 +56,14 @@ void ClientNet::stop() {
   }
 }
 
+void ClientNet::set_default_hostname() {
+  auto hostname = remy::get_hostname();
+  if (!hostname.empty()) {
+    Log.info("Setting hostname: {}", hostname);
+    set_new_name(hostname);
+  }
+}
+
 asio::awaitable<void> ClientNet::run_control_coro() {
   try {
     auto l = Log.guard();
@@ -68,6 +77,8 @@ asio::awaitable<void> ClientNet::run_control_coro() {
     co_await m_control_sock.async_connect(m_endpoint, asio::use_awaitable);
 
     co_await serde::send(m_control_sock, ConnectionType::Control);
+
+    set_default_hostname();
 
     auto l1 = Log.guard("operator");
     co_await (incoming_control_msg() || outcoming_control_msg());
@@ -478,7 +489,6 @@ asio::awaitable<void> CopyReceiver::process() {
 
 namespace {
 void statx_to_metainfo(const std::filesystem::path& path, FileMetainfo& out_info) {
-
 #ifndef ANDROID
   struct statx statx_info;
   static constexpr auto STATX_MASK =

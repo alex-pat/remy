@@ -35,6 +35,7 @@ class ClientNet final : public std::enable_shared_from_this<ClientNet> {
   const Config &m_conf;
 
  private:
+  void set_default_hostname();
   boost::asio::awaitable<void> run_control_coro();
   boost::asio::awaitable<void> incoming_control_msg();
   boost::asio::awaitable<void> outcoming_control_msg();

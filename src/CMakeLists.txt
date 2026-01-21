@@ -28,6 +28,7 @@ add_executable(${REMY_CLIENT_TARGET}
     main-client.cpp
     view-client.cpp
     client.cpp
+    sys-linux.cpp
 )
 
 target_link_libraries(${REMY_CLIENT_TARGET}
