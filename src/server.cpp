@@ -139,8 +139,8 @@ ClientCtrl::ClientCtrl(ClientId id, std::shared_ptr<Server> server, tcp::socket&
     , m_socket(std::move(socket))
     , m_send_requests(m_socket.get_executor(), 20) {
   auto endpoint = m_socket.remote_endpoint();
-  auto endpoint_name = std::format("{}:{}", endpoint.address().to_string(), endpoint.port());
-  m_name = std::move(endpoint_name);
+  m_endpoint_str = std::format("{}:{}", endpoint.address().to_string(), endpoint.port());
+  m_name = m_endpoint_str;
 }
 
 ClientCtrl::~ClientCtrl() { Log.trace("Destroying client {} ({})", m_id, m_name); }
@@ -161,6 +161,8 @@ asio::awaitable<void> ClientCtrl::incoming_messages() {
       case SetName: {
         auto new_name = co_await serde::recv<ClientName>(m_socket);
         utils::trim_end(new_name);
+
+        new_name = std::format("{} ({})", new_name, m_endpoint_str);
 
         Log.info("Setting client name ({}) '{}' -> '{}'", m_id, m_name, new_name);
         m_name = new_name;

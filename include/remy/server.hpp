@@ -87,6 +87,7 @@ class ClientCtrl : public std::enable_shared_from_this<ClientCtrl> {
  private:
   std::shared_ptr<Server> m_server;
   ClientName m_name;
+  std::string m_endpoint_str;
   boost::asio::ip::tcp::socket m_socket;
 
   SendsChannel m_send_requests;
