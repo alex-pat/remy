@@ -78,6 +78,7 @@ class ClientUi final : public std::enable_shared_from_this<ClientUi>, public Dis
       int m_menu_index = 0;
       std::vector<std::string> m_basenames = {".."};
       std::vector<FileMetainfo> m_metas;
+      std::vector<bool> m_selected_dentries = {false}; // Track selected state of dentries
     };
     Browser m_browser;
   };
@@ -115,8 +116,8 @@ class ClientUi final : public std::enable_shared_from_this<ClientUi>, public Dis
     static constexpr int COPY_FAILED = 3;
     int view_selected = 0;
 
-    RemoteDentry src;
-    RemoteDentry dst;
+    RemoteSrc src;
+    RemoteDest dst;
 
     WatcherInfo progress_info;
   };

@@ -114,7 +114,10 @@ Components ClientUi::create_panels() {
                 .transform =  // Renders pretty line for dentry
                 [&pnl](const EntryState &state) {
                   Elements elems;
-                  elems.push_back(text(state.active ? "> " : "  "));
+                  elems.push_back(text(state.active ? ">" : " "));
+                  elems.push_back(
+                    text(pnl.m_browser.m_selected_dentries[state.index] ? "*" : " ")
+                    | color(Color::Yellow) | bold);
                   if (state.index == 0) {
                     if (pnl.m_browser.m_cwd.empty()) {
                       elems.push_back(text(".. (Disconnect and show clients list)") | italic);
@@ -158,6 +161,14 @@ Components ClientUi::create_panels() {
               m_client->cd(browser_id, pnl.m_browser.m_cwd);
               pnl.m_view_selected = Panel::PANEL_WAITING;
             },
+    }) | CatchEvent([&pnl](Event event) { // Handle Space for selection
+        if (event == Event::Character(' ')) {
+            if (pnl.m_browser.m_menu_index != 0) { // Cannot select ".."
+                pnl.m_browser.m_selected_dentries[pnl.m_browser.m_menu_index] = !pnl.m_browser.m_selected_dentries[pnl.m_browser.m_menu_index];
+                return true;
+            }
+        }
+        return false;
     });
     browser |= Renderer([&pnl](Element inner) {
       return vbox({
@@ -402,19 +413,32 @@ ComponentDecorator ClientUi::create_modal_copy() {
                   },
                   BUTTON_OPTIONS),
           }) | Renderer([this](Element inner) {
-            const auto &left_path = m_copy_modal.direction ? m_copy_modal.dst.second : m_copy_modal.src.second;
-            const auto &right_path = m_copy_modal.direction ? m_copy_modal.src.second : m_copy_modal.dst.second;
+            auto make_text = [this](bool is_left) {
+              std::stringstream out;
+              if ((is_left && !m_copy_modal.direction) || (!is_left && m_copy_modal.direction)) {
+                out << m_copy_modal.src.dentries.size()
+                    << " in dir: '"
+                    << m_copy_modal.src.basedir << "':\n";
+                std::copy(m_copy_modal.src.dentries.cbegin(), m_copy_modal.src.dentries.cend(),
+                          std::ostream_iterator<std::string>(out, "\n"));
+              } else {
+                out << m_copy_modal.dst.second;
+              }
+              return out.str();
+            };
+            std::string left_text = make_text(true);
+            std::string right_text = make_text(false);
             auto direction = m_copy_modal.direction ? " <- " : " -> ";
             return vbox({
                        hbox({
                            vbox({
                                text(m_panels[0].m_browser.m_name) | align_right,
-                               paragraph(left_path),
+                               paragraph(left_text),
                            }),
                            text(direction) | bold,
                            vbox({
                                text(m_panels[1].m_browser.m_name),
-                               paragraph(right_path),
+                               paragraph(right_text),
                            }),
                        }),
                        inner,
@@ -566,6 +590,7 @@ void ClientUi::show_dents(UiBrowserId id, PathDentsPayload &&payload) {
     browser.m_menu_index = 0;
     browser.m_basenames.resize(1);
     browser.m_metas.resize(1);
+    browser.m_selected_dentries.assign(dents.size() + 1, false);
     std::sort(dents.begin(), dents.end(), [](const Dentry &first, const Dentry &second) mutable {
       if ((first.metainfo.mode & S_IFMT) != (second.metainfo.mode & S_IFMT)) {
         if (S_ISDIR(first.metainfo.mode)) {
@@ -588,37 +613,79 @@ void ClientUi::show_dents(UiBrowserId id, PathDentsPayload &&payload) {
 /** Calculates `RemoteDentries` for copy. To change direction, call it again */
 void ClientUi::copy_dialog_payload() {
   if (m_panels[0].m_view_selected != Panel::PANEL_BROWSER || m_panels[1].m_view_selected != Panel::PANEL_BROWSER) {
-    Log.warn("Two clients should be opened to be able to copy");
+    Log.warn("Two clients must be opened to be able to copy");
     return;
   }
 
   auto &left = m_panels[0].m_browser;
   auto &right = m_panels[1].m_browser;
 
-  if (left.m_menu_index == 0 && right.m_menu_index == 0) {
-    Log.warn("Both points are '..', can't choose what to copy");
+  if (left.m_basenames.size() <= 1 && right.m_basenames.size() <= 1) {
+    Log.warn("Both are empty, can't choose what to copy");
     return;
   }
+  // TODO if !m_copy_modal.is_shown then look at active to set direction
 
-  if (left.m_menu_index == 0) {
-    Log.warn("Left is '..', can only be destination");
+  if (left.m_basenames.size() <= 1) {
+    Log.warn("Left is empty, can only be destination");
     m_copy_modal.direction = true;
-  } else if (right.m_menu_index == 0) {
-    Log.warn("Right is '..', can only be destination");
+  } else if (right.m_basenames.size() <= 1) {
+    Log.warn("Right is empty, can only be destination");
     m_copy_modal.direction = false;
   } else {
     // If calling it again, switch the direction
     m_copy_modal.direction = !m_copy_modal.direction;
   }
 
-  if (!m_copy_modal.direction) {
-    m_copy_modal.src = {left.m_client_id, left.m_cwd / left.m_basenames[left.m_menu_index]};
-    m_copy_modal.dst = {right.m_client_id, right.m_cwd};
-  } else {
-    m_copy_modal.dst = {left.m_client_id, left.m_cwd};
-    m_copy_modal.src = {right.m_client_id, right.m_cwd / right.m_basenames[right.m_menu_index]};
+  // Determine source and destination browsers
+  Panel::Browser *src_browser;
+  Panel::Browser *dst_browser;
+
+  if (!m_copy_modal.direction) {  // Left to right
+    src_browser = &left;
+    dst_browser = &right;
+  } else {  // Right to left
+    src_browser = &right;
+    dst_browser = &left;
   }
 
+  DBG(Log.trace("src basenames size {}", src_browser->m_basenames.size());)
+  DBG(Log.trace("dst basenames size {}", dst_browser->m_basenames.size());)
+  DBG(Log.trace("selected dentries size {}", src_browser->m_selected_dentries.size());)
+
+  // Construct RemoteSrc and RemoteDest
+  m_copy_modal.src = {src_browser->m_client_id, src_browser->m_cwd.string(), {}};
+  m_copy_modal.dst = {dst_browser->m_client_id, dst_browser->m_cwd.string()};
+
+  // Collect explicitly selected files (starting from index 1 to skip "..")
+  for (size_t i = 1; i < src_browser->m_selected_dentries.size(); ++i) {
+    if (src_browser->m_selected_dentries[i]) {
+      DBG(Log.trace("Adding {}", src_browser->m_basenames[i]);)
+      m_copy_modal.src.dentries.push_back(src_browser->m_basenames[i]);
+    }
+  }
+
+  DBG(Log.trace("copied from selected {}", m_copy_modal.src.dentries.size());)
+
+  if (m_copy_modal.src.dentries.empty()) {
+    // No explicit multiple selections, fallback to single item or current directory.
+    if (src_browser->m_menu_index == 0) {
+      DBG(Log.trace("copying all src dentries");)
+      // If ".." is highlighted and nothing else is selected, copy current directory.
+      m_copy_modal.src.dentries.assign(
+        std::next(src_browser->m_basenames.cbegin()),
+        src_browser->m_basenames.cend());
+    } else {
+      DBG(Log.trace("copying a single dentry");)
+      // Otherwise, copy the single highlighted item.
+      m_copy_modal.src.dentries.push_back(src_browser->m_basenames[src_browser->m_menu_index]);
+    }
+  }
+
+  if (m_copy_modal.src.dentries.empty()) [[unlikely]] {
+    Log.err("No entries to send");
+    return;
+  }
   m_copy_modal.is_shown = true;
 }
 

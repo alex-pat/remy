@@ -41,28 +41,28 @@ class DistLog {
   }
 
   template <class... Args>
-  std::string trace(std::format_string<Args...> fmt, Args &&...args) {
+  std::string trace(std::format_string<Args...> fmt, Args &&... args) {
     return log(LogLevel::Trace, fmt, std::forward<Args>(args)...);
   }
   template <class... Args>
-  std::string info(std::format_string<Args...> fmt, Args &&...args) {
+  std::string info(std::format_string<Args...> fmt, Args &&... args) {
     return log(LogLevel::Info, fmt, std::forward<Args>(args)...);
   }
   template <class... Args>
-  std::string warn(std::format_string<Args...> fmt, Args &&...args) {
+  std::string warn(std::format_string<Args...> fmt, Args &&... args) {
     return log(LogLevel::Warning, fmt, std::forward<Args>(args)...);
   }
   template <class... Args>
-  std::string err(std::format_string<Args...> fmt, Args &&...args) {
+  std::string err(std::format_string<Args...> fmt, Args &&... args) {
     return log(LogLevel::Error, fmt, std::forward<Args>(args)...);
   }
   template <class... Args>
-  std::string crit(std::format_string<Args...> fmt, Args &&...args) {
+  std::string crit(std::format_string<Args...> fmt, Args &&... args) {
     return log(LogLevel::Critical, fmt, std::forward<Args>(args)...);
   }
 
   template <class... Args>
-  std::string log(LogLevel level, std::format_string<Args...> fmt, Args &&...args) {
+  std::string log(LogLevel level, std::format_string<Args...> fmt, Args &&... args) {
     auto line = std::format(fmt, std::forward<Args>(args)...);
     if (send_to_observers(level, line)) {
       cleanup_observers();

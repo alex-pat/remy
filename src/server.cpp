@@ -186,9 +186,9 @@ asio::awaitable<void> ClientCtrl::incoming_messages() {
                        asio::detached);
       } break;
       case Copy: {
-        auto src = co_await serde::recv<RemoteDentry>(m_socket);
-        auto dst = co_await serde::recv<RemoteDentry>(m_socket);
-        DBG(Log.info("sending from {}:{} to {}:{}", src.first, src.second, dst.first, dst.second);)
+        auto src = co_await serde::recv<RemoteSrc>(m_socket);
+        auto dst = co_await serde::recv<RemoteDest>(m_socket);
+        DBG(Log.info("sending from {}:{} to {}:{}", src.id, src.basedir, dst.first, dst.second);)
         asio::co_spawn(m_socket.get_executor(),
                        m_server->process_copy(std::move(src), std::move(dst), weak_from_this()), asio::detached);
       } break;
@@ -244,13 +244,27 @@ asio::awaitable<void> ClientCtrl::request_browser_reader(ClientBrowserToken clie
       },
       asio::use_awaitable);
 }
-asio::awaitable<void> ClientCtrl::request_copy(CopyToken token, CopyRole role, std::string&& path) {
+asio::awaitable<void> ClientCtrl::request_copy_source(CopyToken token, std::string&& path,
+                                                      std::vector<std::string>&& dentries) {
   co_await m_send_requests.async_send(
       {},
-      [this, token, role, path = std::move(path)]() -> asio::awaitable<void> {
+      [this, token, path = std::move(path), dentries = std::move(dentries)]() -> asio::awaitable<void> {
         co_await serde::send(m_socket, ServerControlMsgType::CopyRequest);
         co_await serde::send(m_socket, token);
-        co_await serde::send(m_socket, role);
+        co_await serde::send(m_socket, CopyRole::Source);
+        co_await serde::send(m_socket, path);
+        co_await serde::send(m_socket, dentries);
+      },
+      asio::use_awaitable);
+}
+
+asio::awaitable<void> ClientCtrl::request_copy_destination(CopyToken token, std::string&& path) {
+  co_await m_send_requests.async_send(
+      {},
+      [this, token, path = std::move(path)]() -> asio::awaitable<void> {
+        co_await serde::send(m_socket, ServerControlMsgType::CopyRequest);
+        co_await serde::send(m_socket, token);
+        co_await serde::send(m_socket, CopyRole::Destination);
         co_await serde::send(m_socket, path);
       },
       asio::use_awaitable);
@@ -348,17 +362,16 @@ asio::awaitable<T> msg_proxy(tcp::socket& sock_from, tcp::socket& sock_to) {
 }
 }  // namespace
 
-asio::awaitable<std::pair<tcp::socket, tcp::socket>> Server::copy_handshake(RemoteDentry&& src_info,
-                                                                            RemoteDentry&& dst_info) {
+asio::awaitable<std::pair<tcp::socket, tcp::socket>> Server::copy_handshake(RemoteSrc&& src_info,
+                                                                            RemoteDest&& dst_info) {
   auto ex = co_await boost::asio::this_coro::executor;
-  auto [src_id, src_path] = std::move(src_info);
   auto [dst_id, dst_path] = std::move(dst_info);
 
   std::shared_ptr<ClientCtrl> src;
   std::shared_ptr<ClientCtrl> dst;
   {
     std::lock_guard l(m_mtx);
-    src = m_clients.at(src_id);
+    src = m_clients.at(src_info.id);
     dst = m_clients.at(dst_id);
   }
 
@@ -368,14 +381,14 @@ asio::awaitable<std::pair<tcp::socket, tcp::socket>> Server::copy_handshake(Remo
   auto& sockets_chan = new_sockets_chan(m_pending_copy_ops, token);
   DBG(Log.trace("created copy chan");)
 
-  co_await src->request_copy(token, CopyRole::Source, std::move(src_path));
+  co_await src->request_copy_source(token, std::move(src_info.basedir), std::move(src_info.dentries));
   DBG(Log.trace("sent request to src");)
 
   tcp::socket src_socket(ex);
   src_socket.assign(tcp::v4(), co_await sockets_chan.async_receive(asio::use_awaitable));
   DBG(Log.trace("got src sock");)
 
-  co_await dst->request_copy(token, CopyRole::Destination, std::move(dst_path));
+  co_await dst->request_copy_destination(token, std::move(dst_path));
   DBG(Log.trace("sent request to dst");)
 
   tcp::socket dst_socket(ex);
@@ -385,7 +398,7 @@ asio::awaitable<std::pair<tcp::socket, tcp::socket>> Server::copy_handshake(Remo
 }
 
 /** Connects together `Copy` connections and performs smart proxy, calculating progress and notifying the Watcher */
-asio::awaitable<void> Server::process_copy(RemoteDentry&& src_info, RemoteDentry&& dst_info,
+asio::awaitable<void> Server::process_copy(RemoteSrc&& src_info, RemoteDest&& dst_info,
                                            std::weak_ptr<ClientCtrl> watcher) {
   auto l = Log.guard();
   auto ex = co_await asio::this_coro::executor;
@@ -441,7 +454,7 @@ asio::awaitable<void> Server::process_copy(RemoteDentry&& src_info, RemoteDentry
     }
     co_await progress_send(true);
   } catch (const std::exception& e) {
-    Log.err("process_copy: {} -> {}: {}", src_info.first, dst_info.first, e.what());
+    Log.err("process_copy: {}", e.what());
     success = false;
   }
   if (!success) {
