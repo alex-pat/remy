@@ -80,9 +80,8 @@ void ClientUi::run() {
   m_client->stop();
 }
 
-Components ClientUi::create_panels() {
-  Components panels;
-  panels.reserve(m_panels.size());
+void ClientUi::create_panels() {
+  m_panels_components.reserve(m_panels.size());
   UiBrowserId browser_id = 0;
   for (auto &pnl : m_panels) {
     // Clients menu
@@ -187,17 +186,16 @@ Components ClientUi::create_panels() {
             waiting,
         },
         &pnl.m_view_selected);
-    panels.push_back(tbcntrl);
+    m_panels_components.push_back(tbcntrl);
     browser_id++;
   }
-  return panels;
 }
 
 Component ClientUi::create_main_container() {
-  auto panels = create_panels();
+  create_panels();
 
   m_split_size = Terminal::Size().dimx / 2;
-  auto wins_split = ResizableSplitLeft(panels[0], panels[1], &m_split_size);
+  auto wins_split = ResizableSplitLeft(m_panels_components[0], m_panels_components[1], &m_split_size);
 
   auto indicator_str = std::format("Server: {}:{}", m_client->m_conf.addr, m_client->m_conf.port);
   auto connected_indicator = Renderer([indicator_str] { return text(indicator_str); });
@@ -624,9 +622,11 @@ void ClientUi::copy_dialog_payload() {
     Log.warn("Both are empty, can't choose what to copy");
     return;
   }
-  // TODO if !m_copy_modal.is_shown then look at active to set direction
 
-  if (left.m_basenames.size() <= 1) {
+  if (!m_copy_modal.is_shown) {
+    // We just opened the dialog, use focused panel as source
+    m_copy_modal.direction = m_panels_components[1]->Focused();
+  } else if (left.m_basenames.size() <= 1) {
     Log.warn("Left is empty, can only be destination");
     m_copy_modal.direction = true;
   } else if (right.m_basenames.size() <= 1) {

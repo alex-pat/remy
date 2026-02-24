@@ -33,7 +33,7 @@ class ClientUi final : public std::enable_shared_from_this<ClientUi>, public Dis
   void log(LogLevel, std::string_view) override;
 
  private:
-  ftxui::Components create_panels();
+  void create_panels();
   ftxui::Component create_main_container();
   ftxui::ComponentDecorator create_modal_help();
   ftxui::ComponentDecorator create_modal_new_name();
@@ -83,6 +83,7 @@ class ClientUi final : public std::enable_shared_from_this<ClientUi>, public Dis
     Browser m_browser;
   };
   std::array<Panel, 2> m_panels;
+  ftxui::Components m_panels_components;
   int m_split_size;  // For ResizableSplitLeft
 
   struct NewNameModal {

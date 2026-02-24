@@ -426,7 +426,7 @@ asio::awaitable<void> CopySender::process() {
 void CopySender::collect_metadata() {
   FileMetainfo meta = {};
 
-  while (m_base_path.back() == '/') [[unlikely]] {
+  while (!m_base_path.empty() && m_base_path.back() == '/') [[unlikely]] {
     m_base_path.resize(m_base_path.size() - 1);
   }
 
