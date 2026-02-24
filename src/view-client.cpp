@@ -115,8 +115,9 @@ void ClientUi::create_panels() {
                   Elements elems;
                   elems.push_back(text(state.active ? ">" : " "));
                   elems.push_back(
-                    text(pnl.m_browser.m_selected_dentries[state.index] ? "*" : " ")
-                    | color(Color::Yellow) | bold);
+                    pnl.m_browser.m_selected_dentries[state.index] ?
+                      (text("*") | color(Color::Yellow) | bold)
+                      : text(" "));
                   if (state.index == 0) {
                     if (pnl.m_browser.m_cwd.empty()) {
                       elems.push_back(text(".. (Disconnect and show clients list)") | italic);
@@ -160,12 +161,24 @@ void ClientUi::create_panels() {
               m_client->cd(browser_id, pnl.m_browser.m_cwd);
               pnl.m_view_selected = Panel::PANEL_WAITING;
             },
-    }) | CatchEvent([&pnl](Event event) { // Handle Space for selection
-        if (event == Event::Character(' ')) {
-            if (pnl.m_browser.m_menu_index != 0) { // Cannot select ".."
-                pnl.m_browser.m_selected_dentries[pnl.m_browser.m_menu_index] = !pnl.m_browser.m_selected_dentries[pnl.m_browser.m_menu_index];
-                return true;
-            }
+    }) | CatchEvent([this, &pnl](Event event) { // Handle Space / right clicks for selection
+        if (event == Event::Character(' ') && pnl.m_browser.m_menu_index > 0) {
+          pnl.m_browser.m_selected_dentries[pnl.m_browser.m_menu_index] = !pnl.m_browser.m_selected_dentries[pnl.m_browser.m_menu_index];
+          pnl.m_browser.m_menu_index =
+            std::min<int>(pnl.m_browser.m_menu_index + 1,
+                          pnl.m_browser.m_basenames.size() - 1);
+          return true;
+        }
+        if (event.is_mouse()) {
+          auto ms = event.mouse();
+          if (ms.button == Mouse::Right && ms.motion == Mouse::Pressed) {
+            ms.button = Mouse::Left;
+            ms.y++; // for some reason ???
+            m_screen.PostEvent(Event::Mouse("", ms));
+            m_screen.PostEvent(Event::Character(' '));
+            m_screen.PostEvent(Event::Character('k')); // up, compensate increasing did by selection
+            return true;
+          }
         }
         return false;
     });
