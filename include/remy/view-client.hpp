@@ -33,7 +33,7 @@ class ClientUi final : public std::enable_shared_from_this<ClientUi>, public Dis
   void log(LogLevel, std::string_view) override;
 
  private:
-  ftxui::Components create_panels();
+  void create_panels();
   ftxui::Component create_main_container();
   ftxui::ComponentDecorator create_modal_help();
   ftxui::ComponentDecorator create_modal_new_name();
@@ -78,10 +78,12 @@ class ClientUi final : public std::enable_shared_from_this<ClientUi>, public Dis
       int m_menu_index = 0;
       std::vector<std::string> m_basenames = {".."};
       std::vector<FileMetainfo> m_metas;
+      std::vector<bool> m_selected_dentries = {false}; // Track selected state of dentries
     };
     Browser m_browser;
   };
   std::array<Panel, 2> m_panels;
+  ftxui::Components m_panels_components;
   int m_split_size;  // For ResizableSplitLeft
 
   struct NewNameModal {
@@ -115,8 +117,8 @@ class ClientUi final : public std::enable_shared_from_this<ClientUi>, public Dis
     static constexpr int COPY_FAILED = 3;
     int view_selected = 0;
 
-    RemoteDentry src;
-    RemoteDentry dst;
+    RemoteSrc src;
+    RemoteDest dst;
 
     WatcherInfo progress_info;
   };

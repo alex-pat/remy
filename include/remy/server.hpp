@@ -25,7 +25,7 @@ class Server final : public std::enable_shared_from_this<Server> {
 
   boost::asio::awaitable<void> process_control_conn(boost::asio::ip::tcp::socket &&socket);
   boost::asio::awaitable<void> process_browser_conn(ClientId host, ClientId reader, ClientBrowserToken);
-  boost::asio::awaitable<void> process_copy(RemoteDentry &&src, RemoteDentry &&dst, std::weak_ptr<ClientCtrl> watcher);
+  boost::asio::awaitable<void> process_copy(RemoteSrc &&src, RemoteDest &&dst, std::weak_ptr<ClientCtrl> watcher);
 
   /** Collects clients list for sending */
   ClientsListPayload get_clients_descs();
@@ -54,7 +54,7 @@ class Server final : public std::enable_shared_from_this<Server> {
 
   /** Generates `CopyToken`, asks clients to create `Copy` connections and returns connected sockets for source and destination */
   boost::asio::awaitable<std::pair<boost::asio::ip::tcp::socket, boost::asio::ip::tcp::socket>> copy_handshake(
-      RemoteDentry &&src_info, RemoteDentry &&dst_info);
+      RemoteSrc &&src_info, RemoteDest &&dst_info);
 
   // Helper functions to operate with `m_pending_browsers` and `m_pending_copy_ops`
   template <typename Key>
@@ -77,7 +77,9 @@ class ClientCtrl : public std::enable_shared_from_this<ClientCtrl> {
 
   boost::asio::awaitable<void> request_browser_host(ServerBrowserToken);
   boost::asio::awaitable<void> request_browser_reader(ClientBrowserToken, std::optional<ServerBrowserToken>);
-  boost::asio::awaitable<void> request_copy(CopyToken, CopyRole, std::string &&path);
+  boost::asio::awaitable<void> request_copy_source(CopyToken, std::string &&path,
+                                                   std::vector<std::string> &&dentries);
+  boost::asio::awaitable<void> request_copy_destination(CopyToken, std::string &&path);
   boost::asio::awaitable<void> send_watcher_info(std::optional<WatcherInfo>);
 
   const ClientName &name() const { return m_name; }

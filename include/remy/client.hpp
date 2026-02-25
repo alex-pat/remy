@@ -30,7 +30,7 @@ class ClientNet final : public std::enable_shared_from_this<ClientNet> {
 
   size_t browser_hosts_count() const { return m_browser_hosts_count; }
 
-  void request_copy(RemoteDentry from, RemoteDentry to);
+  void request_copy(RemoteSrc from, RemoteDest to);
 
   const Config &m_conf;
 
@@ -117,11 +117,11 @@ class ClientNet final : public std::enable_shared_from_this<ClientNet> {
 
   template <class Copier>
     requires std::is_base_of_v<ClientCopy, Copier>
-  boost::asio::awaitable<void> run_copy(CopyToken token, std::string &&path) {
+  boost::asio::awaitable<void> run_copy(CopyToken token, std::string &&path, std::vector<std::string> &&dentries = {}) {
     try {
-      Copier sender{m_io_context, std::move(path)};
-      co_await sender.connect(m_endpoint, token);
-      co_await sender.process();
+      Copier copier{m_io_context, std::move(path), std::move(dentries)};
+      co_await copier.connect(m_endpoint, token);
+      co_await copier.process();
     } catch (const std::exception &e) {
       Log.err("{}: {}", std::source_location::current().function_name(), e.what());
     }
@@ -132,7 +132,9 @@ class ClientNet final : public std::enable_shared_from_this<ClientNet> {
 
 class CopySender : public ClientNet::ClientCopy {
  public:
-  using ClientNet::ClientCopy::ClientCopy;
+  CopySender(boost::asio::io_context &ctx, std::string &&path, std::vector<std::string> &&dentries)
+      : ClientCopy(ctx, std::move(path))
+      , m_input_names(std::move(dentries)) {}
 
   boost::asio::awaitable<void> process() override;
 
@@ -145,11 +147,13 @@ class CopySender : public ClientNet::ClientCopy {
     FileMetainfo meta = {};
   };
   std::vector<Dentry> m_dentries;
+  std::vector<std::string> m_input_names;
 };
 
 class CopyReceiver : public ClientNet::ClientCopy {
  public:
-  using ClientNet::ClientCopy::ClientCopy;
+  CopyReceiver(boost::asio::io_context &ctx, std::string &&path, std::vector<std::string> &&)
+      : ClientCopy(ctx, std::move(path)) {}
 
   boost::asio::awaitable<void> process() override;
 };
