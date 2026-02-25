@@ -231,6 +231,8 @@ Component ClientUi::create_main_container() {
       "[c]opy", [this] { copy_dialog_payload(); }, BUTTON_OPTIONS);
   auto clients_button = Button(
       "[r]eload", [this] { reload_info(); }, BUTTON_OPTIONS);
+  auto reset_button = Button(
+      "[=] Reset panels", [this] { m_split_size = Terminal::Size().dimx / 2; }, BUTTON_OPTIONS);
   auto logs_button = Button(
       "Show lo[g]s", [this] { m_logs.is_shown = !m_logs.is_shown; }, BUTTON_OPTIONS);
   auto quit_button = Button(
@@ -254,6 +256,7 @@ Component ClientUi::create_main_container() {
           name_button,
           copy_button,
           clients_button,
+          reset_button,
           logs_button,
           quit_button,
       }),
@@ -275,6 +278,7 @@ Component ClientUi::create_main_container() {
                               name_button->Render(),
                               copy_button->Render(),
                               clients_button->Render(),
+                              reset_button->Render(),
                               logs_button->Render(),
                               quit_button->Render(),
                           },
@@ -300,6 +304,10 @@ Component ClientUi::create_main_container() {
     }
     if (event == Event::Character('n')) {
       m_name_modal.is_shown = true;
+      return true;
+    }
+    if (event == Event::Character('=')) {
+      m_split_size = Terminal::Size().dimx / 2;
       return true;
     }
     if (event == Event::Character('g')) {
@@ -335,6 +343,7 @@ ComponentDecorator ClientUi::create_modal_help() {
       {text("Enter / Double click") | align_right, separatorEmpty(), text("Enter directory / client")},
       {text("r") | align_right, separatorEmpty(), text("Force reload clients list or dir")},
       {text("c") | align_right, separatorEmpty(), text("Copy")},
+      {text("=") | align_right, separatorEmpty(), text("Reset panels width to equal")},
       {text("n") | align_right, separatorEmpty(), text("Set new name for this client")},
       {text("g") | align_right, separatorEmpty(), text("Toggle showing logs")},
       {text("F1") | align_right, separatorEmpty(), text("Show this help")},
