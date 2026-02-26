@@ -71,6 +71,8 @@ void ClientUi::run() {
 
   main_container |= create_modal_copy();
 
+  main_container |= create_modal_delete();
+
   // Run network thread and all logic
   m_client->run(weak_from_this());
 
@@ -80,9 +82,8 @@ void ClientUi::run() {
   m_client->stop();
 }
 
-Components ClientUi::create_panels() {
-  Components panels;
-  panels.reserve(m_panels.size());
+void ClientUi::create_panels() {
+  m_panels_components.reserve(m_panels.size());
   UiBrowserId browser_id = 0;
   for (auto &pnl : m_panels) {
     // Clients menu
@@ -114,7 +115,11 @@ Components ClientUi::create_panels() {
                 .transform =  // Renders pretty line for dentry
                 [&pnl](const EntryState &state) {
                   Elements elems;
-                  elems.push_back(text(state.active ? "> " : "  "));
+                  elems.push_back(text(state.active ? ">" : " "));
+                  elems.push_back(
+                    pnl.m_browser.m_selected_dentries[state.index] ?
+                      (text("*") | color(Color::Yellow) | bold)
+                      : text(" "));
                   if (state.index == 0) {
                     if (pnl.m_browser.m_cwd.empty()) {
                       elems.push_back(text(".. (Disconnect and show clients list)") | italic);
@@ -158,6 +163,26 @@ Components ClientUi::create_panels() {
               m_client->cd(browser_id, pnl.m_browser.m_cwd);
               pnl.m_view_selected = Panel::PANEL_WAITING;
             },
+    }) | CatchEvent([this, &pnl](Event event) { // Handle Space / right clicks for selection
+        if (event == Event::Character(' ') && pnl.m_browser.m_menu_index > 0) {
+          pnl.m_browser.m_selected_dentries[pnl.m_browser.m_menu_index] = !pnl.m_browser.m_selected_dentries[pnl.m_browser.m_menu_index];
+          pnl.m_browser.m_menu_index =
+            std::min<int>(pnl.m_browser.m_menu_index + 1,
+                          pnl.m_browser.m_basenames.size() - 1);
+          return true;
+        }
+        if (event.is_mouse()) {
+          auto ms = event.mouse();
+          if (ms.button == Mouse::Right && ms.motion == Mouse::Pressed) {
+            ms.button = Mouse::Left;
+            ms.y++; // for some reason ???
+            m_screen.PostEvent(Event::Mouse("", ms));
+            m_screen.PostEvent(Event::Character(' '));
+            m_screen.PostEvent(Event::Character('k')); // up, compensate increasing did by selection
+            return true;
+          }
+        }
+        return false;
     });
     browser |= Renderer([&pnl](Element inner) {
       return vbox({
@@ -176,17 +201,16 @@ Components ClientUi::create_panels() {
             waiting,
         },
         &pnl.m_view_selected);
-    panels.push_back(tbcntrl);
+    m_panels_components.push_back(tbcntrl);
     browser_id++;
   }
-  return panels;
 }
 
 Component ClientUi::create_main_container() {
-  auto panels = create_panels();
+  create_panels();
 
   m_split_size = Terminal::Size().dimx / 2;
-  auto wins_split = ResizableSplitLeft(panels[0], panels[1], &m_split_size);
+  auto wins_split = ResizableSplitLeft(m_panels_components[0], m_panels_components[1], &m_split_size);
 
   auto indicator_str = std::format("Server: {}:{}", m_client->m_conf.addr, m_client->m_conf.port);
   auto connected_indicator = Renderer([indicator_str] { return text(indicator_str); });
@@ -209,6 +233,8 @@ Component ClientUi::create_main_container() {
       "[c]opy", [this] { copy_dialog_payload(); }, BUTTON_OPTIONS);
   auto clients_button = Button(
       "[r]eload", [this] { reload_info(); }, BUTTON_OPTIONS);
+  auto reset_button = Button(
+      "[=] Reset panels", [this] { m_split_size = Terminal::Size().dimx / 2; }, BUTTON_OPTIONS);
   auto logs_button = Button(
       "Show lo[g]s", [this] { m_logs.is_shown = !m_logs.is_shown; }, BUTTON_OPTIONS);
   auto quit_button = Button(
@@ -232,6 +258,7 @@ Component ClientUi::create_main_container() {
           name_button,
           copy_button,
           clients_button,
+          reset_button,
           logs_button,
           quit_button,
       }),
@@ -253,6 +280,7 @@ Component ClientUi::create_main_container() {
                               name_button->Render(),
                               copy_button->Render(),
                               clients_button->Render(),
+                              reset_button->Render(),
                               logs_button->Render(),
                               quit_button->Render(),
                           },
@@ -276,8 +304,16 @@ Component ClientUi::create_main_container() {
       copy_dialog_payload();
       return true;
     }
+    if (event == Event::Character('d')) {
+      delete_dialog_payload();
+      return true;
+    }
     if (event == Event::Character('n')) {
       m_name_modal.is_shown = true;
+      return true;
+    }
+    if (event == Event::Character('=')) {
+      m_split_size = Terminal::Size().dimx / 2;
       return true;
     }
     if (event == Event::Character('g')) {
@@ -313,6 +349,7 @@ ComponentDecorator ClientUi::create_modal_help() {
       {text("Enter / Double click") | align_right, separatorEmpty(), text("Enter directory / client")},
       {text("r") | align_right, separatorEmpty(), text("Force reload clients list or dir")},
       {text("c") | align_right, separatorEmpty(), text("Copy")},
+      {text("=") | align_right, separatorEmpty(), text("Reset panels width to equal")},
       {text("n") | align_right, separatorEmpty(), text("Set new name for this client")},
       {text("g") | align_right, separatorEmpty(), text("Toggle showing logs")},
       {text("F1") | align_right, separatorEmpty(), text("Show this help")},
@@ -402,19 +439,32 @@ ComponentDecorator ClientUi::create_modal_copy() {
                   },
                   BUTTON_OPTIONS),
           }) | Renderer([this](Element inner) {
-            const auto &left_path = m_copy_modal.direction ? m_copy_modal.dst.second : m_copy_modal.src.second;
-            const auto &right_path = m_copy_modal.direction ? m_copy_modal.src.second : m_copy_modal.dst.second;
+            auto make_text = [this](bool is_left) {
+              std::stringstream out;
+              if ((is_left && !m_copy_modal.direction) || (!is_left && m_copy_modal.direction)) {
+                out << m_copy_modal.src.dentries.size()
+                    << " in dir: '"
+                    << m_copy_modal.src.basedir << "':\n";
+                std::copy(m_copy_modal.src.dentries.cbegin(), m_copy_modal.src.dentries.cend(),
+                          std::ostream_iterator<std::string>(out, "\n"));
+              } else {
+                out << m_copy_modal.dst.second;
+              }
+              return out.str();
+            };
+            std::string left_text = make_text(true);
+            std::string right_text = make_text(false);
             auto direction = m_copy_modal.direction ? " <- " : " -> ";
             return vbox({
                        hbox({
                            vbox({
                                text(m_panels[0].m_browser.m_name) | align_right,
-                               paragraph(left_path),
+                               paragraph(left_text),
                            }),
                            text(direction) | bold,
                            vbox({
                                text(m_panels[1].m_browser.m_name),
-                               paragraph(right_path),
+                               paragraph(right_text),
                            }),
                        }),
                        inner,
@@ -566,6 +616,7 @@ void ClientUi::show_dents(UiBrowserId id, PathDentsPayload &&payload) {
     browser.m_menu_index = 0;
     browser.m_basenames.resize(1);
     browser.m_metas.resize(1);
+    browser.m_selected_dentries.assign(dents.size() + 1, false);
     std::sort(dents.begin(), dents.end(), [](const Dentry &first, const Dentry &second) mutable {
       if ((first.metainfo.mode & S_IFMT) != (second.metainfo.mode & S_IFMT)) {
         if (S_ISDIR(first.metainfo.mode)) {
@@ -585,40 +636,77 @@ void ClientUi::show_dents(UiBrowserId id, PathDentsPayload &&payload) {
   m_screen.Post(Event::Custom);
 }
 
+RemoteDentries ClientUi::Panel::Browser::collect_selected_dentries() const {
+  RemoteDentries entries = {m_client_id, m_cwd.string(), {}};
+
+  // Collect explicitly selected files (starting from index 1 to skip "..")
+  for (size_t i = 1; i < m_selected_dentries.size(); ++i) {
+    if (m_selected_dentries[i]) {
+      entries.dentries.push_back(m_basenames[i]);
+    }
+  }
+
+  if (entries.dentries.empty()) {
+    // No explicit multiple selections, fallback to single item or current directory.
+    if (m_menu_index == 0) {
+      // If ".." is highlighted and nothing else is selected, copy current directory.
+      entries.dentries.assign(std::next(m_basenames.cbegin()), m_basenames.cend());
+    } else {
+      // Otherwise, copy the single highlighted item.
+      entries.dentries.push_back(m_basenames[m_menu_index]);
+    }
+  }
+  return entries;
+}
+
 /** Calculates `RemoteDentries` for copy. To change direction, call it again */
 void ClientUi::copy_dialog_payload() {
   if (m_panels[0].m_view_selected != Panel::PANEL_BROWSER || m_panels[1].m_view_selected != Panel::PANEL_BROWSER) {
-    Log.warn("Two clients should be opened to be able to copy");
+    Log.warn("Two clients must be opened to be able to copy");
     return;
   }
 
   auto &left = m_panels[0].m_browser;
   auto &right = m_panels[1].m_browser;
 
-  if (left.m_menu_index == 0 && right.m_menu_index == 0) {
-    Log.warn("Both points are '..', can't choose what to copy");
+  if (left.m_basenames.size() <= 1 && right.m_basenames.size() <= 1) {
+    Log.warn("Both are empty, can't choose what to copy");
     return;
   }
 
-  if (left.m_menu_index == 0) {
-    Log.warn("Left is '..', can only be destination");
+  if (!m_copy_modal.is_shown) {
+    // We just opened the dialog, use focused panel as source
+    m_copy_modal.direction = m_panels_components[1]->Focused();
+  } else if (left.m_basenames.size() <= 1) {
+    Log.warn("Left is empty, can only be destination");
     m_copy_modal.direction = true;
-  } else if (right.m_menu_index == 0) {
-    Log.warn("Right is '..', can only be destination");
+  } else if (right.m_basenames.size() <= 1) {
+    Log.warn("Right is empty, can only be destination");
     m_copy_modal.direction = false;
   } else {
     // If calling it again, switch the direction
     m_copy_modal.direction = !m_copy_modal.direction;
   }
 
-  if (!m_copy_modal.direction) {
-    m_copy_modal.src = {left.m_client_id, left.m_cwd / left.m_basenames[left.m_menu_index]};
-    m_copy_modal.dst = {right.m_client_id, right.m_cwd};
-  } else {
-    m_copy_modal.dst = {left.m_client_id, left.m_cwd};
-    m_copy_modal.src = {right.m_client_id, right.m_cwd / right.m_basenames[right.m_menu_index]};
+  // Determine source and destination browsers
+  Panel::Browser *src_browser;
+  Panel::Browser *dst_browser;
+
+  if (!m_copy_modal.direction) {  // Left to right
+    src_browser = &left;
+    dst_browser = &right;
+  } else {  // Right to left
+    src_browser = &right;
+    dst_browser = &left;
   }
 
+  m_copy_modal.src = src_browser->collect_selected_dentries();
+  m_copy_modal.dst = {dst_browser->m_client_id, dst_browser->m_cwd.string()};
+
+  if (m_copy_modal.src.dentries.empty()) [[unlikely]] {
+    Log.err("No entries to send");
+    return;
+  }
   m_copy_modal.is_shown = true;
 }
 
@@ -636,6 +724,86 @@ void ClientUi::update_watcher_info(std::optional<WatcherInfo> &&info) {
       Log.err("Copying process failed");
       m_copy_modal.view_selected = CopyModal::COPY_FAILED;
     }
+  });
+  m_screen.Post(Event::Custom);
+}
+
+void ClientUi::delete_dialog_payload() {
+  UiBrowserId id = m_panels_components[0]->Focused() ? 0 : 1;
+  auto &panel = m_panels[id];
+  if (panel.m_view_selected != Panel::PANEL_BROWSER) {
+    Log.warn("Browser must be opened to be able to delete");
+    return;
+  }
+
+  m_delete_modal.id = id;
+  m_delete_modal.entries = panel.m_browser.collect_selected_dentries();
+  if (m_delete_modal.entries.dentries.empty()) {
+    Log.err("No entries to delete");
+    return;
+  }
+
+  m_delete_modal.state = DeleteModal::CONFIRMATION_DIALOG;
+  m_delete_modal.is_shown = true;
+}
+
+ComponentDecorator ClientUi::create_modal_delete() {
+  auto delete_modal = Container::Tab(
+      {
+          // Confirmation dialog
+          Container::Horizontal({
+              Button(
+                  "Cancel", [this] { m_delete_modal.is_shown = false; }, BUTTON_OPTIONS),
+              Button(
+                  "Confirm",
+                  [this] {
+                    m_client->request_delete(m_delete_modal.id, m_delete_modal.entries);
+                    m_delete_modal.state = DeleteModal::WAITING;
+                  },
+                  BUTTON_OPTIONS),
+          }) | Renderer([this](Element inner) {
+            std::stringstream out;
+            out << "Are you sure you want to delete " << m_delete_modal.entries.dentries.size() << " entries in '"
+                << m_delete_modal.entries.basedir << "'?\n";
+            for (const auto &name : m_delete_modal.entries.dentries) {
+              out << " - " << name << "\n";
+            }
+            return vbox({
+                paragraph(out.str()),
+                separator(),
+                inner,
+            });
+          }),
+          // Waiting for result
+          Renderer([] { return text("Waiting for result from target client...") | center; }),
+          // Result
+          Button(
+              "Ok",
+              [this] {
+                m_delete_modal.is_shown = false;
+                reload_info();
+              },
+              BUTTON_OPTIONS) |
+              Renderer([this](Element inner) {
+                return vbox({
+                    paragraph(m_delete_modal.result_msg),
+                    separator(),
+                    inner,
+                });
+              }),
+      },
+      (int *)&m_delete_modal.state);
+
+  delete_modal |=
+      Renderer([](Element inner) { return window(text(" Delete ") | bold | color(Color::Red), inner) | xflex; });
+
+  return Modal(delete_modal, &m_delete_modal.is_shown);
+}
+
+void ClientUi::show_delete_result(std::string &&msg) {
+  m_screen.Post([this, msg = std::move(msg)]() mutable {
+    m_delete_modal.result_msg = std::move(msg);
+    m_delete_modal.state = DeleteModal::RESULT;
   });
   m_screen.Post(Event::Custom);
 }

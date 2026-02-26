@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.31) # Possibly older
+cmake_minimum_required(VERSION 3.28)
 project(remy LANGUAGES CXX)
 
 option(DEBUG_OUT "Print debug output" OFF)

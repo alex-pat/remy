@@ -50,7 +50,8 @@ enum class ClientControlMsgType : uint8_t {
   /** Request to create Browser connections for this client as 'BrowserReader'.
    *  Payload is `ClientBrowserToken` (client-generated token) + `ClientId` (BrowserHost id) */
   ConnectBrowser,
-  /** Request to copy files from one client to another. Payload is two `RemoteDentry` (for source and destination).
+  /** Request to copy files from one client to another.
+   *  Payload is `RemoteDentries` of source + `RemoteDentry` of destination.
    *  After that `ServerControlMsgType::WatcherInfo` will be sent with copy progress. */
   Copy,
 };
@@ -62,13 +63,14 @@ enum class ServerControlMsgType : uint8_t {
   ClientName,
   /** List of all currently connected clients. See `ClientsListPayload`. Can be sent without request, on updates */
   ClientsList,
-  /** Notifies that BrowserHost is connected to server, so now this client (BrowserClient) should create its `Browser` connection.
-   *  Payload: `ClientBrowserToken` + `optional<ServerBrowserToken>`(nullopt if something failed) */
+  /** Notifies that BrowserHost is connected to server, so now this client (BrowserClient) should create its `Browser`
+   * connection. Payload: `ClientBrowserToken` + `optional<ServerBrowserToken>`(nullopt if something failed) */
   BrowserConnected,
   /** Requests a client to create `Browser` connection to be BrowserHost. Payload is `ServerBrowserToken` */
   ConnectBrowserRequest,
   /** Request to create `Copy` connection.
-   *  Payload: `CopyToken` + `CopyRole` + string(path - source or destination depending on role) */
+   *  Payload: `CopyToken` + `CopyRole` + string(path - source base or destination directory depending on role)
+   *  + (vector<string> (source dentries, if source role) */
   CopyRequest,
   WatcherInfo,
 };
@@ -77,11 +79,15 @@ enum class ServerControlMsgType : uint8_t {
 enum class BrowserClientMsgType : uint8_t {
   /** Payload is string(path) */
   GetDents,
+  /** Payload is `RemoteDentries` */
+  Delete,
 };
 /** Browser connection: BrowserHost->BrowserClient message */
 enum class BrowserHostMsgType : uint8_t {
   /** Answer to GetDents. Payload is `PathDentsPayload` */
   PathDents,
+  /** Answer to Delete. Payload is string(result message) */
+  DeleteResponse,
 };
 
 static_assert(std::endian::native == std::endian::little);
@@ -123,8 +129,15 @@ struct Dentry {
 using PathDents = std::vector<Dentry>;
 using PathDentsPayload = std::pair<std::string, std::optional<PathDents>>;
 
-/** Source/Destination path. Id of Client and relative path. */
+/** Several directory items on a remote client. Used in Copy and Delete operations */
+struct RemoteDentries {
+  ClientId id;
+  std::string basedir;
+  std::vector<std::string> dentries;
+};
+/** Path at a remote client */
 using RemoteDentry = std::pair<ClientId, std::string>;
+
 /** Server-generated unique id of copy operation */
 using CopyToken = uint64_t;
 enum class CopyRole : uint8_t {

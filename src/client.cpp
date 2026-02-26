@@ -133,7 +133,8 @@ asio::awaitable<void> ClientNet::incoming_control_msg() {
           auto role = co_await serde::recv<CopyRole>(m_control_sock);
           auto path = co_await serde::recv<std::string>(m_control_sock);
           if (role == CopyRole::Source) {
-            co_spawn(m_io_context, run_copy<CopySender>(token, std::move(path)), asio::detached);
+            auto dentries = co_await serde::recv<std::vector<std::string>>(m_control_sock);
+            co_spawn(m_io_context, run_copy<CopySender>(token, std::move(path), std::move(dentries)), asio::detached);
           } else {
             co_spawn(m_io_context, run_copy<CopyReceiver>(token, std::move(path)), asio::detached);
           }
@@ -196,7 +197,7 @@ void ClientNet::request_browser_connection(UiBrowserId browser_id, ClientId host
     co_await serde::send(m_control_sock, host_id);
   });
 }
-void ClientNet::request_copy(RemoteDentry from, RemoteDentry to) {
+void ClientNet::request_copy(RemoteDentries from, RemoteDentry to) {
   send_request(m_send_requests, [this, from, to]() -> asio::awaitable<void> {
     co_await serde::send(m_control_sock, ClientControlMsgType::Copy);
     co_await serde::send(m_control_sock, from);
@@ -274,6 +275,10 @@ boost::asio::awaitable<void> ClientNet::BrowserReader::incoming_msg() {
           Log.info("Received PathDentsPayload: {}: success={}", payload.first, payload.second.has_value());
           m_ui.lock()->show_dents(m_browser_id, std::move(payload));
         } break;
+        case BrowserHostMsgType::DeleteResponse: {
+          auto msg = co_await serde::recv<std::string>(m_socket);
+          m_ui.lock()->show_delete_result(std::move(msg));
+        } break;
       }
     }
   } catch (const std::exception& e) {
@@ -300,10 +305,20 @@ void ClientNet::cd(UiBrowserId id, const std::string& dir) {
   std::lock_guard l(m_mtx);
   m_browser_readers.at(id).cd(dir);
 }
+void ClientNet::request_delete(UiBrowserId id, RemoteDentries entries) {
+  std::lock_guard l(m_mtx);
+  m_browser_readers.at(id).request_delete(std::move(entries));
+}
 void ClientNet::BrowserReader::cd(const std::string& new_dir) {
   send_request(m_send_requests, [this, dir = new_dir]() -> asio::awaitable<void> {
     co_await serde::send(m_socket, BrowserClientMsgType::GetDents);
     co_await serde::send(m_socket, dir);
+  });
+}
+void ClientNet::BrowserReader::request_delete(RemoteDentries entries) {
+  send_request(m_send_requests, [this, ents = std::move(entries)]() -> asio::awaitable<void> {
+    co_await serde::send(m_socket, BrowserClientMsgType::Delete);
+    co_await serde::send(m_socket, ents);
   });
 }
 
@@ -336,7 +351,7 @@ boost::asio::awaitable<void> ClientNet::BrowserHost::incoming_msg() {
       break;
     }
     switch (msg_type) {
-      case BrowserClientMsgType::GetDents:
+      case BrowserClientMsgType::GetDents: {
         auto dir = co_await serde::recv<std::string>(m_socket);
         co_await m_send_requests.async_send(
             {},
@@ -365,7 +380,34 @@ boost::asio::awaitable<void> ClientNet::BrowserHost::incoming_msg() {
               }
             },
             asio::use_awaitable);
-        break;
+        } break;
+      case BrowserClientMsgType::Delete: {
+        auto entries = co_await serde::recv<RemoteDentries>(m_socket);
+        co_await m_send_requests.async_send(
+            {},
+            [ents = std::move(entries), this]() -> asio::awaitable<void> {
+              std::uintmax_t removed_count = 0;
+              std::string error_msg;
+              std::filesystem::path base_path(ents.basedir);
+              Log.info("Deleting: dir={}, {} items", ents.basedir, ents.dentries.size());
+
+              for (const auto& name : ents.dentries) {
+                std::error_code ec;
+                removed_count += std::filesystem::remove_all(base_path / name, ec);
+                if (ec) {
+                  error_msg += std::format("\n{}: {}", name, ec.message());
+                }
+              }
+
+              std::string result = std::format("Removed {} items.", removed_count);
+              if (!error_msg.empty()) {
+                result += " Errors:" + error_msg;
+              }
+              co_await serde::send(m_socket, BrowserHostMsgType::DeleteResponse);
+              co_await serde::send(m_socket, result);
+            },
+            asio::use_awaitable);
+        } break;
     }
   }
   m_send_requests.close();
@@ -400,6 +442,7 @@ asio::awaitable<void> CopySender::process() {
 
     std::string remote_rel_path{path.c_str() + m_base_len};
     co_await serde::send(m_socket, remote_rel_path);
+    DBG(Log.trace("sent rel path={}", remote_rel_path);)
 
     if (S_ISREG(meta.mode)) {
       std::ifstream file;
@@ -424,27 +467,30 @@ asio::awaitable<void> CopySender::process() {
 void CopySender::collect_metadata() {
   FileMetainfo meta = {};
 
-  while (m_base_path.back() == '/') [[unlikely]] {
+  while (!m_base_path.empty() && m_base_path.back() == '/') [[unlikely]] {
     m_base_path.resize(m_base_path.size() - 1);
   }
 
-  std::filesystem::path path{m_base_path};
-  if (auto parent = path.parent_path(); !parent.empty()) {
-    m_base_len = std::strlen(parent.c_str()) + 1;
-  }
+  std::filesystem::path base_path{m_base_path};
+  m_base_len = m_base_path.size() > 0 ? m_base_path.size() + 1 : 0;
 
-  statx_to_metainfo(path, meta);
-  m_dentries.emplace_back(path, meta);
-  if (!std::filesystem::is_directory(path)) {
-    return;
-  }
+  DBG(Log.trace("base={}, len={}", m_base_path, m_base_len);)
 
-  for (const auto& dentry : std::filesystem::recursive_directory_iterator(path)) {
-    statx_to_metainfo(dentry.path(), meta);
-    if (S_ISREG(meta.mode) || S_ISDIR(meta.mode) || S_ISLNK(meta.mode)) {
-      m_dentries.emplace_back(dentry, meta);
-    } else {
-      Log.warn("File '{}' is ignored (not supported)", dentry.path().c_str());
+  for (const auto& name : m_input_names) {
+    auto path = base_path / name;
+    statx_to_metainfo(path, meta);
+    m_dentries.emplace_back(path, meta);
+    if (!std::filesystem::is_directory(path)) {
+      continue;
+    }
+
+    for (const auto& dentry : std::filesystem::recursive_directory_iterator(path)) {
+      statx_to_metainfo(dentry.path(), meta);
+      if (S_ISREG(meta.mode) || S_ISDIR(meta.mode) || S_ISLNK(meta.mode)) {
+        m_dentries.emplace_back(dentry, meta);
+      } else {
+        Log.warn("File '{}' is ignored (not supported)", dentry.path().c_str());
+      }
     }
   }
   Log.trace("[Sender] m_dentries.size()={}", m_dentries.size());
@@ -457,9 +503,9 @@ asio::awaitable<void> CopyReceiver::process() {
 
   std::vector<char> buf(4096);
   for (uint64_t i = 0; i < files_amount; i++) {
-    Log.trace("Receiver: num {}", i);
     auto meta = co_await serde::recv<FileMetainfo>(m_socket);
     auto rel_path = co_await serde::recv<std::string>(m_socket);
+    DBG(Log.trace("Receiver: {} received path={}", i, rel_path);)
 
     auto path = std::filesystem::path{m_base_path} / rel_path;
 
@@ -529,7 +575,7 @@ void statx_to_metainfo(const std::filesystem::path& path, FileMetainfo& out_info
 
 void apply_attrs(const std::filesystem::path& path, const FileMetainfo& metainfo) {
   if (chmod(path.c_str(), metainfo.mode & ~S_IFMT) == -1) {
-    Log.err("Warning: '{}' chmod: {}\n", path.c_str(), strerror(errno));
+    Log.err("'{}' chmod: {}", path.c_str(), strerror(errno));
   }
 
   const std::array times = {
@@ -543,11 +589,11 @@ void apply_attrs(const std::filesystem::path& path, const FileMetainfo& metainfo
       },
   };
   if (utimensat(AT_FDCWD, path.c_str(), times.data(), AT_SYMLINK_NOFOLLOW) == -1) {
-    Log.err("Warning: '{}' utimensat: {}\n", path.c_str(), strerror(errno));
+    Log.err("'{}' utimensat: {}", path.c_str(), strerror(errno));
   }
 
   if (lchown(path.c_str(), metainfo.uid, metainfo.gid) == -1) {
-    Log.err("Warning: '{}' lchown: {}\n", path.c_str(), strerror(errno));
+    Log.err("'{}' lchown: {}", path.c_str(), strerror(errno));
   }
 }
 }  // namespace
