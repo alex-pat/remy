@@ -27,10 +27,11 @@ class ClientNet final : public std::enable_shared_from_this<ClientNet> {
   void request_browser_connection(UiBrowserId browser_id, ClientId host_id);
   void cd(UiBrowserId id, const std::string &dir);
   void disconnect_browser(UiBrowserId id);
+  void request_delete(UiBrowserId id, RemoteDentries entries);
 
   size_t browser_hosts_count() const { return m_browser_hosts_count; }
 
-  void request_copy(RemoteSrc from, RemoteDest to);
+  void request_copy(RemoteDentries from, RemoteDentry to);
 
   const Config &m_conf;
 
@@ -66,6 +67,7 @@ class ClientNet final : public std::enable_shared_from_this<ClientNet> {
     boost::asio::awaitable<void> connect(const boost::asio::ip::tcp::endpoint &endpoint);
     void stop();
     void cd(const std::string &dir);
+    void request_delete(RemoteDentries entries);
 
     boost::asio::awaitable<void> outcoming_msg();
     boost::asio::awaitable<void> incoming_msg();

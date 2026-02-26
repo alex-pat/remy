@@ -197,7 +197,7 @@ void ClientNet::request_browser_connection(UiBrowserId browser_id, ClientId host
     co_await serde::send(m_control_sock, host_id);
   });
 }
-void ClientNet::request_copy(RemoteSrc from, RemoteDest to) {
+void ClientNet::request_copy(RemoteDentries from, RemoteDentry to) {
   send_request(m_send_requests, [this, from, to]() -> asio::awaitable<void> {
     co_await serde::send(m_control_sock, ClientControlMsgType::Copy);
     co_await serde::send(m_control_sock, from);
@@ -275,6 +275,10 @@ boost::asio::awaitable<void> ClientNet::BrowserReader::incoming_msg() {
           Log.info("Received PathDentsPayload: {}: success={}", payload.first, payload.second.has_value());
           m_ui.lock()->show_dents(m_browser_id, std::move(payload));
         } break;
+        case BrowserHostMsgType::DeleteResponse: {
+          auto msg = co_await serde::recv<std::string>(m_socket);
+          m_ui.lock()->show_delete_result(std::move(msg));
+        } break;
       }
     }
   } catch (const std::exception& e) {
@@ -301,10 +305,20 @@ void ClientNet::cd(UiBrowserId id, const std::string& dir) {
   std::lock_guard l(m_mtx);
   m_browser_readers.at(id).cd(dir);
 }
+void ClientNet::request_delete(UiBrowserId id, RemoteDentries entries) {
+  std::lock_guard l(m_mtx);
+  m_browser_readers.at(id).request_delete(std::move(entries));
+}
 void ClientNet::BrowserReader::cd(const std::string& new_dir) {
   send_request(m_send_requests, [this, dir = new_dir]() -> asio::awaitable<void> {
     co_await serde::send(m_socket, BrowserClientMsgType::GetDents);
     co_await serde::send(m_socket, dir);
+  });
+}
+void ClientNet::BrowserReader::request_delete(RemoteDentries entries) {
+  send_request(m_send_requests, [this, ents = std::move(entries)]() -> asio::awaitable<void> {
+    co_await serde::send(m_socket, BrowserClientMsgType::Delete);
+    co_await serde::send(m_socket, ents);
   });
 }
 
@@ -337,7 +351,7 @@ boost::asio::awaitable<void> ClientNet::BrowserHost::incoming_msg() {
       break;
     }
     switch (msg_type) {
-      case BrowserClientMsgType::GetDents:
+      case BrowserClientMsgType::GetDents: {
         auto dir = co_await serde::recv<std::string>(m_socket);
         co_await m_send_requests.async_send(
             {},
@@ -366,7 +380,34 @@ boost::asio::awaitable<void> ClientNet::BrowserHost::incoming_msg() {
               }
             },
             asio::use_awaitable);
-        break;
+        } break;
+      case BrowserClientMsgType::Delete: {
+        auto entries = co_await serde::recv<RemoteDentries>(m_socket);
+        co_await m_send_requests.async_send(
+            {},
+            [ents = std::move(entries), this]() -> asio::awaitable<void> {
+              std::uintmax_t removed_count = 0;
+              std::string error_msg;
+              std::filesystem::path base_path(ents.basedir);
+              Log.info("Deleting: dir={}, {} items", ents.basedir, ents.dentries.size());
+
+              for (const auto& name : ents.dentries) {
+                std::error_code ec;
+                removed_count += std::filesystem::remove_all(base_path / name, ec);
+                if (ec) {
+                  error_msg += std::format("\n{}: {}", name, ec.message());
+                }
+              }
+
+              std::string result = std::format("Removed {} items.", removed_count);
+              if (!error_msg.empty()) {
+                result += " Errors:" + error_msg;
+              }
+              co_await serde::send(m_socket, BrowserHostMsgType::DeleteResponse);
+              co_await serde::send(m_socket, result);
+            },
+            asio::use_awaitable);
+        } break;
     }
   }
   m_send_requests.close();

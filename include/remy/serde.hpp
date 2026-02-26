@@ -166,20 +166,20 @@ inline asio::awaitable<Dentry> recv(tcp::socket& socket) {
   co_return Dentry{basename, metainfo};
 }
 
-// RemoteSrc
+// RemoteDentries
 template <>
-inline asio::awaitable<void> send(tcp::socket& socket, const RemoteSrc& src) {
+inline asio::awaitable<void> send(tcp::socket& socket, const RemoteDentries& src) {
   co_await send(socket, src.id);
   co_await send(socket, src.basedir);
   co_await send(socket, src.dentries);
 }
 
 template <>
-inline asio::awaitable<RemoteSrc> recv(tcp::socket& socket) {
-  auto id = co_await recv<decltype(RemoteSrc::id)>(socket);
-  auto basedir = co_await recv<decltype(RemoteSrc::basedir)>(socket);
-  auto dentries = co_await recv<decltype(RemoteSrc::dentries)>(socket);
-  co_return RemoteSrc{id, basedir, dentries};
+inline asio::awaitable<RemoteDentries> recv(tcp::socket& socket) {
+  auto id = co_await recv<decltype(RemoteDentries::id)>(socket);
+  auto basedir = co_await recv<decltype(RemoteDentries::basedir)>(socket);
+  auto dentries = co_await recv<decltype(RemoteDentries::dentries)>(socket);
+  co_return RemoteDentries{id, basedir, dentries};
 }
 
 // WatcherInfo

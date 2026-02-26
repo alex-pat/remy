@@ -71,6 +71,8 @@ void ClientUi::run() {
 
   main_container |= create_modal_copy();
 
+  main_container |= create_modal_delete();
+
   // Run network thread and all logic
   m_client->run(weak_from_this());
 
@@ -300,6 +302,10 @@ Component ClientUi::create_main_container() {
     }
     if (event == Event::Character('c')) {
       copy_dialog_payload();
+      return true;
+    }
+    if (event == Event::Character('d')) {
+      delete_dialog_payload();
       return true;
     }
     if (event == Event::Character('n')) {
@@ -630,6 +636,29 @@ void ClientUi::show_dents(UiBrowserId id, PathDentsPayload &&payload) {
   m_screen.Post(Event::Custom);
 }
 
+RemoteDentries ClientUi::Panel::Browser::collect_selected_dentries() const {
+  RemoteDentries entries = {m_client_id, m_cwd.string(), {}};
+
+  // Collect explicitly selected files (starting from index 1 to skip "..")
+  for (size_t i = 1; i < m_selected_dentries.size(); ++i) {
+    if (m_selected_dentries[i]) {
+      entries.dentries.push_back(m_basenames[i]);
+    }
+  }
+
+  if (entries.dentries.empty()) {
+    // No explicit multiple selections, fallback to single item or current directory.
+    if (m_menu_index == 0) {
+      // If ".." is highlighted and nothing else is selected, copy current directory.
+      entries.dentries.assign(std::next(m_basenames.cbegin()), m_basenames.cend());
+    } else {
+      // Otherwise, copy the single highlighted item.
+      entries.dentries.push_back(m_basenames[m_menu_index]);
+    }
+  }
+  return entries;
+}
+
 /** Calculates `RemoteDentries` for copy. To change direction, call it again */
 void ClientUi::copy_dialog_payload() {
   if (m_panels[0].m_view_selected != Panel::PANEL_BROWSER || m_panels[1].m_view_selected != Panel::PANEL_BROWSER) {
@@ -671,38 +700,8 @@ void ClientUi::copy_dialog_payload() {
     dst_browser = &left;
   }
 
-  DBG(Log.trace("src basenames size {}", src_browser->m_basenames.size());)
-  DBG(Log.trace("dst basenames size {}", dst_browser->m_basenames.size());)
-  DBG(Log.trace("selected dentries size {}", src_browser->m_selected_dentries.size());)
-
-  // Construct RemoteSrc and RemoteDest
-  m_copy_modal.src = {src_browser->m_client_id, src_browser->m_cwd.string(), {}};
+  m_copy_modal.src = src_browser->collect_selected_dentries();
   m_copy_modal.dst = {dst_browser->m_client_id, dst_browser->m_cwd.string()};
-
-  // Collect explicitly selected files (starting from index 1 to skip "..")
-  for (size_t i = 1; i < src_browser->m_selected_dentries.size(); ++i) {
-    if (src_browser->m_selected_dentries[i]) {
-      DBG(Log.trace("Adding {}", src_browser->m_basenames[i]);)
-      m_copy_modal.src.dentries.push_back(src_browser->m_basenames[i]);
-    }
-  }
-
-  DBG(Log.trace("copied from selected {}", m_copy_modal.src.dentries.size());)
-
-  if (m_copy_modal.src.dentries.empty()) {
-    // No explicit multiple selections, fallback to single item or current directory.
-    if (src_browser->m_menu_index == 0) {
-      DBG(Log.trace("copying all src dentries");)
-      // If ".." is highlighted and nothing else is selected, copy current directory.
-      m_copy_modal.src.dentries.assign(
-        std::next(src_browser->m_basenames.cbegin()),
-        src_browser->m_basenames.cend());
-    } else {
-      DBG(Log.trace("copying a single dentry");)
-      // Otherwise, copy the single highlighted item.
-      m_copy_modal.src.dentries.push_back(src_browser->m_basenames[src_browser->m_menu_index]);
-    }
-  }
 
   if (m_copy_modal.src.dentries.empty()) [[unlikely]] {
     Log.err("No entries to send");
@@ -725,6 +724,86 @@ void ClientUi::update_watcher_info(std::optional<WatcherInfo> &&info) {
       Log.err("Copying process failed");
       m_copy_modal.view_selected = CopyModal::COPY_FAILED;
     }
+  });
+  m_screen.Post(Event::Custom);
+}
+
+void ClientUi::delete_dialog_payload() {
+  UiBrowserId id = m_panels_components[0]->Focused() ? 0 : 1;
+  auto &panel = m_panels[id];
+  if (panel.m_view_selected != Panel::PANEL_BROWSER) {
+    Log.warn("Browser must be opened to be able to delete");
+    return;
+  }
+
+  m_delete_modal.id = id;
+  m_delete_modal.entries = panel.m_browser.collect_selected_dentries();
+  if (m_delete_modal.entries.dentries.empty()) {
+    Log.err("No entries to delete");
+    return;
+  }
+
+  m_delete_modal.state = DeleteModal::CONFIRMATION_DIALOG;
+  m_delete_modal.is_shown = true;
+}
+
+ComponentDecorator ClientUi::create_modal_delete() {
+  auto delete_modal = Container::Tab(
+      {
+          // Confirmation dialog
+          Container::Horizontal({
+              Button(
+                  "Cancel", [this] { m_delete_modal.is_shown = false; }, BUTTON_OPTIONS),
+              Button(
+                  "Confirm",
+                  [this] {
+                    m_client->request_delete(m_delete_modal.id, m_delete_modal.entries);
+                    m_delete_modal.state = DeleteModal::WAITING;
+                  },
+                  BUTTON_OPTIONS),
+          }) | Renderer([this](Element inner) {
+            std::stringstream out;
+            out << "Are you sure you want to delete " << m_delete_modal.entries.dentries.size() << " entries in '"
+                << m_delete_modal.entries.basedir << "'?\n";
+            for (const auto &name : m_delete_modal.entries.dentries) {
+              out << " - " << name << "\n";
+            }
+            return vbox({
+                paragraph(out.str()),
+                separator(),
+                inner,
+            });
+          }),
+          // Waiting for result
+          Renderer([] { return text("Waiting for result from target client...") | center; }),
+          // Result
+          Button(
+              "Ok",
+              [this] {
+                m_delete_modal.is_shown = false;
+                reload_info();
+              },
+              BUTTON_OPTIONS) |
+              Renderer([this](Element inner) {
+                return vbox({
+                    paragraph(m_delete_modal.result_msg),
+                    separator(),
+                    inner,
+                });
+              }),
+      },
+      (int *)&m_delete_modal.state);
+
+  delete_modal |=
+      Renderer([](Element inner) { return window(text(" Delete ") | bold | color(Color::Red), inner) | xflex; });
+
+  return Modal(delete_modal, &m_delete_modal.is_shown);
+}
+
+void ClientUi::show_delete_result(std::string &&msg) {
+  m_screen.Post([this, msg = std::move(msg)]() mutable {
+    m_delete_modal.result_msg = std::move(msg);
+    m_delete_modal.state = DeleteModal::RESULT;
   });
   m_screen.Post(Event::Custom);
 }

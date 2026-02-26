@@ -29,6 +29,7 @@ class ClientUi final : public std::enable_shared_from_this<ClientUi>, public Dis
   void critical_error(std::string &&err_msg);
   void browser_error(UiBrowserId);
   void update_watcher_info(std::optional<WatcherInfo> &&info);
+  void show_delete_result(std::string &&msg);
 
   void log(LogLevel, std::string_view) override;
 
@@ -40,6 +41,7 @@ class ClientUi final : public std::enable_shared_from_this<ClientUi>, public Dis
   ftxui::ComponentDecorator create_modal_warning();
   ftxui::ComponentDecorator create_modal_crit_err();
   ftxui::ComponentDecorator create_modal_copy();
+  ftxui::ComponentDecorator create_modal_delete();
 
   /** Update clients list and current directories */
   void reload_info();
@@ -79,6 +81,9 @@ class ClientUi final : public std::enable_shared_from_this<ClientUi>, public Dis
       std::vector<std::string> m_basenames = {".."};
       std::vector<FileMetainfo> m_metas;
       std::vector<bool> m_selected_dentries = {false}; // Track selected state of dentries
+
+      /** Collect selected dentries from panel */
+      RemoteDentries collect_selected_dentries() const;
     };
     Browser m_browser;
   };
@@ -117,13 +122,29 @@ class ClientUi final : public std::enable_shared_from_this<ClientUi>, public Dis
     static constexpr int COPY_FAILED = 3;
     int view_selected = 0;
 
-    RemoteSrc src;
-    RemoteDest dst;
+    RemoteDentries src;
+    RemoteDentry dst;
 
     WatcherInfo progress_info;
   };
   CopyModal m_copy_modal;
   void copy_dialog_payload();
+
+  struct DeleteModal {
+    bool is_shown = false;
+
+    enum State {
+      CONFIRMATION_DIALOG,
+      WAITING,
+      RESULT,
+    } state = CONFIRMATION_DIALOG;
+
+    UiBrowserId id;
+    RemoteDentries entries;
+    std::string result_msg;
+  };
+  DeleteModal m_delete_modal;
+  void delete_dialog_payload();
 
   static constexpr std::chrono::duration DOUBLE_CLICK_TIME = 0.5s;
   std::chrono::time_point<std::chrono::steady_clock> m_last_click;
