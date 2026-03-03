@@ -279,6 +279,10 @@ boost::asio::awaitable<void> ClientNet::BrowserReader::incoming_msg() {
           auto msg = co_await serde::recv<std::string>(m_socket);
           m_ui.lock()->show_delete_result(std::move(msg));
         } break;
+        case BrowserHostMsgType::MkdirResponse: {
+          auto msg = co_await serde::recv<std::string>(m_socket);
+          m_ui.lock()->show_mkdir_result(std::move(msg));
+        } break;
       }
     }
   } catch (const std::exception& e) {
@@ -309,6 +313,10 @@ void ClientNet::request_delete(UiBrowserId id, RemoteDentries entries) {
   std::lock_guard l(m_mtx);
   m_browser_readers.at(id).request_delete(std::move(entries));
 }
+void ClientNet::request_mkdir(UiBrowserId id, const std::string& basedir, const std::string& name) {
+  std::lock_guard l(m_mtx);
+  m_browser_readers.at(id).request_mkdir(basedir, name);
+}
 void ClientNet::BrowserReader::cd(const std::string& new_dir) {
   send_request(m_send_requests, [this, dir = new_dir]() -> asio::awaitable<void> {
     co_await serde::send(m_socket, BrowserClientMsgType::GetDents);
@@ -319,6 +327,12 @@ void ClientNet::BrowserReader::request_delete(RemoteDentries entries) {
   send_request(m_send_requests, [this, ents = std::move(entries)]() -> asio::awaitable<void> {
     co_await serde::send(m_socket, BrowserClientMsgType::Delete);
     co_await serde::send(m_socket, ents);
+  });
+}
+void ClientNet::BrowserReader::request_mkdir(const std::string& basedir, const std::string& name) {
+  send_request(m_send_requests, [this, bdir = basedir, n = name]() -> asio::awaitable<void> {
+    co_await serde::send(m_socket, BrowserClientMsgType::Mkdir);
+    co_await serde::send(m_socket, std::make_pair(bdir, n));
   });
 }
 
@@ -407,7 +421,27 @@ boost::asio::awaitable<void> ClientNet::BrowserHost::incoming_msg() {
               co_await serde::send(m_socket, result);
             },
             asio::use_awaitable);
-        } break;
+      } break;
+      case BrowserClientMsgType::Mkdir: {
+        auto [basedir, name] = co_await serde::recv<std::pair<std::string, std::string>>(m_socket);
+        co_await m_send_requests.async_send(
+            {},
+            [bdir = std::move(basedir), n = std::move(name), this]() -> asio::awaitable<void> {
+              std::error_code ec;
+              std::string result;
+              bool created = std::filesystem::create_directory(std::filesystem::path(bdir) / n, ec);
+              if (created) {
+                result = std::format("Directory '{}' created successfully.", n);
+              } else if (!ec) {
+                result = std::format("Directory '{}' already exists.", n);
+              } else {
+                result = std::format("Failed to create directory '{}': {}", n, ec.message());
+              }
+              co_await serde::send(m_socket, BrowserHostMsgType::MkdirResponse);
+              co_await serde::send(m_socket, result);
+            },
+            asio::use_awaitable);
+      } break;
     }
   }
   m_send_requests.close();

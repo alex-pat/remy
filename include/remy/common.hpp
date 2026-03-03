@@ -81,6 +81,8 @@ enum class BrowserClientMsgType : uint8_t {
   GetDents,
   /** Payload is `RemoteDentries` */
   Delete,
+  /** Payload is pair<string(basedir), string(name)> */
+  Mkdir,
 };
 /** Browser connection: BrowserHost->BrowserClient message */
 enum class BrowserHostMsgType : uint8_t {
@@ -88,6 +90,8 @@ enum class BrowserHostMsgType : uint8_t {
   PathDents,
   /** Answer to Delete. Payload is string(result message) */
   DeleteResponse,
+  /** Answer to Mkdir. Payload is string(result message) */
+  MkdirResponse,
 };
 
 static_assert(std::endian::native == std::endian::little);
