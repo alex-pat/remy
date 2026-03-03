@@ -469,7 +469,15 @@ asio::awaitable<void> CopySender::process() {
   collect_metadata();
   co_await serde::send<uint64_t>(m_socket, m_dentries.size());
 
-  std::vector<char> buf(4096);
+  uint64_t total_size = 0;
+  for (const auto& [path, meta] : m_dentries) {
+    if (S_ISREG(meta.mode)) {
+      total_size += meta.size;
+    }
+  }
+  co_await serde::send<uint64_t>(m_socket, total_size);
+
+  std::vector<char> buf(1024*1024);
   for (const auto& [path, meta] : m_dentries) {
     Log.trace("File: {}", path.c_str());
     co_await serde::send(m_socket, meta);
@@ -533,9 +541,10 @@ void CopySender::collect_metadata() {
 /** Main logic of receiving files */
 asio::awaitable<void> CopyReceiver::process() {
   auto files_amount = co_await serde::recv<uint64_t>(m_socket);
-  Log.trace("Receiver: files_amount {}", files_amount);
+  auto total_size = co_await serde::recv<uint64_t>(m_socket);
+  Log.trace("Receiver: files_amount {}, total_size {}", files_amount, total_size);
 
-  std::vector<char> buf(4096);
+  std::vector<char> buf(1024*1024);
   for (uint64_t i = 0; i < files_amount; i++) {
     auto meta = co_await serde::recv<FileMetainfo>(m_socket);
     auto rel_path = co_await serde::recv<std::string>(m_socket);

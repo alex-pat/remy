@@ -187,19 +187,25 @@ template <>
 inline asio::awaitable<void> send(tcp::socket& socket, const WatcherInfo& dentry) {
   co_await send(socket, dentry.files_all);
   co_await send(socket, dentry.files_completed);
+  co_await send(socket, dentry.total_size);
+  co_await send(socket, dentry.total_progress);
   co_await send(socket, dentry.cur_size);
   co_await send(socket, dentry.cur_progress);
   co_await send(socket, dentry.cur_file);
+  co_await send(socket, dentry.speed);
 }
 
 template <>
 inline asio::awaitable<WatcherInfo> recv(tcp::socket& socket) {
   auto files_all = co_await recv<decltype(WatcherInfo::files_all)>(socket);
   auto files_completed = co_await recv<decltype(WatcherInfo::files_completed)>(socket);
+  auto total_size = co_await recv<decltype(WatcherInfo::total_size)>(socket);
+  auto total_progress = co_await recv<decltype(WatcherInfo::total_progress)>(socket);
   auto cur_size = co_await recv<decltype(WatcherInfo::cur_size)>(socket);
   auto cur_progress = co_await recv<decltype(WatcherInfo::cur_progress)>(socket);
   auto cur_file = co_await recv<decltype(WatcherInfo::cur_file)>(socket);
-  co_return WatcherInfo{files_all, files_completed, cur_size, cur_progress, cur_file};
+  auto speed = co_await recv<decltype(WatcherInfo::speed)>(socket);
+  co_return WatcherInfo{files_all, files_completed, total_size, total_progress, cur_size, cur_progress, cur_file, speed};
 }
 
 }  // namespace remy::serde

@@ -482,26 +482,46 @@ ComponentDecorator ClientUi::create_modal_copy() {
           // Copy progress
           Renderer([this]() {
             const auto &progress = m_copy_modal.progress_info;
-            float overall = static_cast<float>(progress.files_completed) / progress.files_all;
+            float overall_files = static_cast<float>(progress.files_completed) / progress.files_all;
+            float overall_size =
+                static_cast<float>(progress.total_progress) / (progress.total_size ? progress.total_size : 1);
             float cur_file_progress =
                 static_cast<float>(progress.cur_progress) / (progress.cur_size ? progress.cur_size : 1);
+
+            uint64_t remaining_size = progress.total_size > progress.total_progress
+                                          ? progress.total_size - progress.total_progress
+                                          : 0;
+            uint64_t eta_seconds = progress.speed > 0 ? remaining_size / progress.speed : 0;
+
             return vbox({
                 gridbox({
                     {
-                        text("Overall progress: "),
+                        text("Files progress: "),
                         separator(),
-                        gauge(overall),
+                        gauge(overall_files),
                         separator(),
                         text(std::format("{}/{}", progress.files_completed, progress.files_all)),
                     },
                     {
-                        text("Current file"),
+                        text("Total size: "),
+                        separator(),
+                        gauge(overall_size),
+                        separator(),
+                        text(std::format("{}/{}", utils::pretty_size(progress.total_progress),
+                                         utils::pretty_size(progress.total_size))),
+                    },
+                    {
+                        text("Current file: "),
                         separator(),
                         gauge(cur_file_progress),
                         separator(),
                         text(std::format("{}/{}", utils::pretty_size(progress.cur_progress),
                                          utils::pretty_size(progress.cur_size))),
                     },
+                }),
+                hbox({
+                    text("Speed: " + utils::pretty_size(progress.speed) + "/s") | xflex,
+                    text("ETA: " + (progress.speed > 0 ? utils::pretty_duration(eta_seconds) : "--")) | xflex,
                 }),
                 text(progress.cur_file),
             });
@@ -531,7 +551,7 @@ ComponentDecorator ClientUi::create_modal_copy() {
               }),
       },
       &m_copy_modal.view_selected);
-  copy_modal |= Renderer([](Element inner) { return window(text(" Copy "), inner) | size(WIDTH, GREATER_THAN, 70); });
+  copy_modal |= Renderer([](Element inner) { return window(text(" Copy "), inner) | size(WIDTH, EQUAL, Terminal::Size().dimx * 0.8); });
 
   return Modal(copy_modal, &m_copy_modal.is_shown);
 }

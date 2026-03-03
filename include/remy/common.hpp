@@ -154,9 +154,14 @@ struct WatcherInfo {
   uint64_t files_all;
   uint64_t files_completed;
 
+  uint64_t total_size;
+  uint64_t total_progress;
+
   uint64_t cur_size;
   uint64_t cur_progress;
   std::string cur_file;
+
+  uint64_t speed;  // Bytes per second
 };
 
 constexpr uint16_t REMY_DEFAULT_PORT = 7312;
