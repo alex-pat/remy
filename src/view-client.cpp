@@ -147,6 +147,7 @@ void ClientUi::create_panels() {
             },
         .on_enter =
             [this, &pnl, browser_id]() {
+              std::filesystem::path cd_path;
               if (pnl.m_browser.m_menu_index == 0) {
                 // parent or home
                 if (pnl.m_browser.m_cwd.empty()) {
@@ -155,14 +156,14 @@ void ClientUi::create_panels() {
                   pnl.m_view_selected = Panel::PANEL_CLIENTS;
                   return;
                 }
-                pnl.m_browser.m_cwd = pnl.m_browser.m_cwd.parent_path();
+                cd_path = pnl.m_browser.m_cwd.parent_path();
               } else {
                 if (!S_ISDIR(pnl.m_browser.m_metas[pnl.m_browser.m_menu_index].mode)) {
                   return;
                 }
-                pnl.m_browser.m_cwd /= pnl.m_browser.m_basenames[pnl.m_browser.m_menu_index];
+                cd_path = pnl.m_browser.m_cwd / pnl.m_browser.m_basenames[pnl.m_browser.m_menu_index];
               }
-              m_client->cd(browser_id, pnl.m_browser.m_cwd);
+              m_client->cd(browser_id, cd_path);
               pnl.m_view_selected = Panel::PANEL_WAITING;
             },
     }) | CatchEvent([this, &pnl](Event event) { // Handle Space / right clicks for selection
@@ -611,7 +612,6 @@ void ClientUi::show_dents(UiBrowserId id, PathDentsPayload &&payload) {
       auto msg = Log.warn("cd to '{}' failed", path);
       m_warning_modal.message = std::move(msg);
       m_warning_modal.is_shown = true;
-
       return;
     }
     Log.info("UI: updating dentries");
