@@ -73,6 +73,8 @@ void ClientUi::run() {
 
   main_container |= create_modal_delete();
 
+  main_container |= create_modal_mkdir();
+
   // Run network thread and all logic
   m_client->run(weak_from_this());
 
@@ -145,6 +147,7 @@ void ClientUi::create_panels() {
             },
         .on_enter =
             [this, &pnl, browser_id]() {
+              std::filesystem::path cd_path;
               if (pnl.m_browser.m_menu_index == 0) {
                 // parent or home
                 if (pnl.m_browser.m_cwd.empty()) {
@@ -153,14 +156,14 @@ void ClientUi::create_panels() {
                   pnl.m_view_selected = Panel::PANEL_CLIENTS;
                   return;
                 }
-                pnl.m_browser.m_cwd = pnl.m_browser.m_cwd.parent_path();
+                cd_path = pnl.m_browser.m_cwd.parent_path();
               } else {
                 if (!S_ISDIR(pnl.m_browser.m_metas[pnl.m_browser.m_menu_index].mode)) {
                   return;
                 }
-                pnl.m_browser.m_cwd /= pnl.m_browser.m_basenames[pnl.m_browser.m_menu_index];
+                cd_path = pnl.m_browser.m_cwd / pnl.m_browser.m_basenames[pnl.m_browser.m_menu_index];
               }
-              m_client->cd(browser_id, pnl.m_browser.m_cwd);
+              m_client->cd(browser_id, cd_path);
               pnl.m_view_selected = Panel::PANEL_WAITING;
             },
     }) | CatchEvent([this, &pnl](Event event) { // Handle Space / right clicks for selection
@@ -308,6 +311,10 @@ Component ClientUi::create_main_container() {
       delete_dialog_payload();
       return true;
     }
+    if (event == Event::Character('m')) {
+      mkdir_dialog_payload();
+      return true;
+    }
     if (event == Event::Character('n')) {
       m_name_modal.is_shown = true;
       return true;
@@ -349,6 +356,7 @@ ComponentDecorator ClientUi::create_modal_help() {
       {text("Enter / Double click") | align_right, separatorEmpty(), text("Enter directory / client")},
       {text("r") | align_right, separatorEmpty(), text("Force reload clients list or dir")},
       {text("c") | align_right, separatorEmpty(), text("Copy")},
+      {text("m") | align_right, separatorEmpty(), text("Create directory")},
       {text("=") | align_right, separatorEmpty(), text("Reset panels width to equal")},
       {text("n") | align_right, separatorEmpty(), text("Set new name for this client")},
       {text("g") | align_right, separatorEmpty(), text("Toggle showing logs")},
@@ -474,26 +482,46 @@ ComponentDecorator ClientUi::create_modal_copy() {
           // Copy progress
           Renderer([this]() {
             const auto &progress = m_copy_modal.progress_info;
-            float overall = static_cast<float>(progress.files_completed) / progress.files_all;
+            float overall_files = static_cast<float>(progress.files_completed) / progress.files_all;
+            float overall_size =
+                static_cast<float>(progress.total_progress) / (progress.total_size ? progress.total_size : 1);
             float cur_file_progress =
                 static_cast<float>(progress.cur_progress) / (progress.cur_size ? progress.cur_size : 1);
+
+            uint64_t remaining_size = progress.total_size > progress.total_progress
+                                          ? progress.total_size - progress.total_progress
+                                          : 0;
+            uint64_t eta_seconds = progress.speed > 0 ? remaining_size / progress.speed : 0;
+
             return vbox({
                 gridbox({
                     {
-                        text("Overall progress: "),
+                        text("Files progress: "),
                         separator(),
-                        gauge(overall),
+                        gauge(overall_files),
                         separator(),
                         text(std::format("{}/{}", progress.files_completed, progress.files_all)),
                     },
                     {
-                        text("Current file"),
+                        text("Total size: "),
+                        separator(),
+                        gauge(overall_size),
+                        separator(),
+                        text(std::format("{}/{}", utils::pretty_size(progress.total_progress),
+                                         utils::pretty_size(progress.total_size))),
+                    },
+                    {
+                        text("Current file: "),
                         separator(),
                         gauge(cur_file_progress),
                         separator(),
                         text(std::format("{}/{}", utils::pretty_size(progress.cur_progress),
                                          utils::pretty_size(progress.cur_size))),
                     },
+                }),
+                hbox({
+                    text("Speed: " + utils::pretty_size(progress.speed) + "/s") | xflex,
+                    text("ETA: " + (progress.speed > 0 ? utils::pretty_duration(eta_seconds) : "--")) | xflex,
                 }),
                 text(progress.cur_file),
             });
@@ -523,7 +551,7 @@ ComponentDecorator ClientUi::create_modal_copy() {
               }),
       },
       &m_copy_modal.view_selected);
-  copy_modal |= Renderer([](Element inner) { return window(text(" Copy "), inner) | size(WIDTH, GREATER_THAN, 70); });
+  copy_modal |= Renderer([](Element inner) { return window(text(" Copy "), inner) | size(WIDTH, EQUAL, Terminal::Size().dimx * 0.8); });
 
   return Modal(copy_modal, &m_copy_modal.is_shown);
 }
@@ -604,7 +632,6 @@ void ClientUi::show_dents(UiBrowserId id, PathDentsPayload &&payload) {
       auto msg = Log.warn("cd to '{}' failed", path);
       m_warning_modal.message = std::move(msg);
       m_warning_modal.is_shown = true;
-
       return;
     }
     Log.info("UI: updating dentries");
@@ -804,6 +831,86 @@ void ClientUi::show_delete_result(std::string &&msg) {
   m_screen.Post([this, msg = std::move(msg)]() mutable {
     m_delete_modal.result_msg = std::move(msg);
     m_delete_modal.state = DeleteModal::RESULT;
+  });
+  m_screen.Post(Event::Custom);
+}
+
+void ClientUi::mkdir_dialog_payload() {
+  UiBrowserId id = m_panels_components[0]->Focused() ? 0 : 1;
+  auto &panel = m_panels[id];
+  if (panel.m_view_selected != Panel::PANEL_BROWSER) {
+    Log.warn("Browser must be opened to be able to create directory");
+    return;
+  }
+
+  m_mkdir_modal.id = id;
+  m_mkdir_modal.basedir = panel.m_browser.m_cwd.string();
+  m_mkdir_modal.name.clear();
+  m_mkdir_modal.state = MkdirModal::INPUT;
+  m_mkdir_modal.is_shown = true;
+}
+
+ComponentDecorator ClientUi::create_modal_mkdir() {
+  auto apply_mkdir = [this] {
+    utils::trim_end(m_mkdir_modal.name);
+    if (m_mkdir_modal.name.empty()) {
+      Log.err("Directory name cannot be empty");
+      return;
+    }
+    m_client->request_mkdir(m_mkdir_modal.id, m_mkdir_modal.basedir, m_mkdir_modal.name);
+    m_mkdir_modal.state = MkdirModal::WAITING;
+  };
+
+  auto mkdir_modal = Container::Tab(
+      {
+          // Input dialog
+          Container::Vertical({
+              Input(InputOption{
+                  .content = &m_mkdir_modal.name,
+                  .placeholder = "Enter directory name",
+                  .on_enter = apply_mkdir,
+              }),
+              Container::Horizontal({
+                  Button("Ok", apply_mkdir, BUTTON_OPTIONS),
+                  Button(
+                      "Cancel", [this] { m_mkdir_modal.is_shown = false; }, BUTTON_OPTIONS),
+              }),
+          }) | Renderer([](Element inner) {
+            return vbox({
+                text("Create new directory:") | bold,
+                inner,
+            });
+          }),
+          // Waiting for result
+          Renderer([] { return text("Waiting for result from target client...") | center; }),
+          // Result
+          Button(
+              "Ok",
+              [this] {
+                m_mkdir_modal.is_shown = false;
+                reload_info();
+              },
+              BUTTON_OPTIONS) |
+              Renderer([this](Element inner) {
+                return vbox({
+                    paragraph(m_mkdir_modal.result_msg),
+                    separator(),
+                    inner,
+                });
+              }),
+      },
+      (int *)&m_mkdir_modal.state);
+
+  mkdir_modal |=
+      Renderer([](Element inner) { return window(text(" Mkdir ") | bold | color(Color::Green), inner) | xflex; });
+
+  return Modal(mkdir_modal, &m_mkdir_modal.is_shown);
+}
+
+void ClientUi::show_mkdir_result(std::string &&msg) {
+  m_screen.Post([this, msg = std::move(msg)]() mutable {
+    m_mkdir_modal.result_msg = std::move(msg);
+    m_mkdir_modal.state = MkdirModal::RESULT;
   });
   m_screen.Post(Event::Custom);
 }

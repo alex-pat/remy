@@ -81,6 +81,8 @@ enum class BrowserClientMsgType : uint8_t {
   GetDents,
   /** Payload is `RemoteDentries` */
   Delete,
+  /** Payload is pair<string(basedir), string(name)> */
+  Mkdir,
 };
 /** Browser connection: BrowserHost->BrowserClient message */
 enum class BrowserHostMsgType : uint8_t {
@@ -88,6 +90,8 @@ enum class BrowserHostMsgType : uint8_t {
   PathDents,
   /** Answer to Delete. Payload is string(result message) */
   DeleteResponse,
+  /** Answer to Mkdir. Payload is string(result message) */
+  MkdirResponse,
 };
 
 static_assert(std::endian::native == std::endian::little);
@@ -150,9 +154,14 @@ struct WatcherInfo {
   uint64_t files_all;
   uint64_t files_completed;
 
+  uint64_t total_size;
+  uint64_t total_progress;
+
   uint64_t cur_size;
   uint64_t cur_progress;
   std::string cur_file;
+
+  uint64_t speed;  // Bytes per second
 };
 
 constexpr uint16_t REMY_DEFAULT_PORT = 7312;

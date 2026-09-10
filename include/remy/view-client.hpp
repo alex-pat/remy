@@ -30,6 +30,7 @@ class ClientUi final : public std::enable_shared_from_this<ClientUi>, public Dis
   void browser_error(UiBrowserId);
   void update_watcher_info(std::optional<WatcherInfo> &&info);
   void show_delete_result(std::string &&msg);
+  void show_mkdir_result(std::string &&msg);
 
   void log(LogLevel, std::string_view) override;
 
@@ -42,6 +43,7 @@ class ClientUi final : public std::enable_shared_from_this<ClientUi>, public Dis
   ftxui::ComponentDecorator create_modal_crit_err();
   ftxui::ComponentDecorator create_modal_copy();
   ftxui::ComponentDecorator create_modal_delete();
+  ftxui::ComponentDecorator create_modal_mkdir();
 
   /** Update clients list and current directories */
   void reload_info();
@@ -145,6 +147,23 @@ class ClientUi final : public std::enable_shared_from_this<ClientUi>, public Dis
   };
   DeleteModal m_delete_modal;
   void delete_dialog_payload();
+
+  struct MkdirModal {
+    bool is_shown = false;
+
+    enum State {
+      INPUT,
+      WAITING,
+      RESULT,
+    } state = INPUT;
+
+    UiBrowserId id;
+    std::string basedir;
+    std::string name;
+    std::string result_msg;
+  };
+  MkdirModal m_mkdir_modal;
+  void mkdir_dialog_payload();
 
   static constexpr std::chrono::duration DOUBLE_CLICK_TIME = 0.5s;
   std::chrono::time_point<std::chrono::steady_clock> m_last_click;

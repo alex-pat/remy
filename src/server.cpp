@@ -412,7 +412,7 @@ asio::awaitable<void> Server::process_copy(RemoteDentries&& src_info, RemoteDent
     auto progress_send = [&info, watcher, &last_send](bool force_send = false) -> asio::awaitable<void> {
       // Send progress update, but not too frequently (and if watcher sill exists)
       auto cur_time = std::chrono::steady_clock::now();
-      if (force_send || (cur_time - last_send) > 100ms) {
+      if (force_send || (cur_time - last_send) > 250ms) {
         if (auto watcher_ptr = watcher.lock(); watcher_ptr) {
           co_await watcher_ptr->send_watcher_info(info);
         }
@@ -421,9 +421,11 @@ asio::awaitable<void> Server::process_copy(RemoteDentries&& src_info, RemoteDent
     };
     auto files_count = co_await msg_proxy<uint64_t>(src_socket, dst_socket);
     info->files_all = files_count;
+    info->total_size = co_await msg_proxy<uint64_t>(src_socket, dst_socket);
     co_await progress_send(true);
 
-    std::vector<char> buf(4096);
+    auto start_time = std::chrono::steady_clock::now();
+    std::vector<char> buf(1024*1024);
     for (uint64_t file_num = 0; file_num < files_count; file_num++) {
       auto meta = co_await msg_proxy<FileMetainfo>(src_socket, dst_socket);
       auto path = co_await msg_proxy<std::string>(src_socket, dst_socket);
@@ -434,12 +436,20 @@ asio::awaitable<void> Server::process_copy(RemoteDentries&& src_info, RemoteDent
       co_await progress_send();
 
       if (S_ISREG(meta.mode)) {
-        for (info->cur_progress = 0; info->cur_progress < meta.size;) {
-          auto read_size = std::min<uint64_t>(buf.size(), meta.size - info->cur_progress);
+        for (uint64_t f_prog = 0; f_prog < meta.size;) {
+          auto read_size = std::min<uint64_t>(buf.size(), meta.size - f_prog);
           read_size = co_await asio::async_read(src_socket, asio::buffer(buf.data(), read_size),
                                                 asio::transfer_at_least(1), asio::use_awaitable);
           co_await asio::async_write(dst_socket, asio::buffer(buf.data(), read_size), asio::use_awaitable);
-          info->cur_progress += read_size;
+          f_prog += read_size;
+          info->cur_progress = f_prog;
+          info->total_progress += read_size;
+
+          auto elapsed = std::chrono::steady_clock::now() - start_time;
+          if (elapsed > 0s) {
+            info->speed = info->total_progress * 1000 /
+                          std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
+          }
           co_await progress_send();
         }
       } else if (S_ISLNK(meta.mode)) {
