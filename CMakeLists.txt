@@ -5,6 +5,22 @@ option(DEBUG_OUT "Print debug output" OFF)
 
 message(STATUS "DEBUG_OUT = ${DEBUG_OUT}")
 
+find_package(Git QUIET)
+if(GIT_FOUND)
+  execute_process(
+    COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_SOURCE_DIR}" show -s "--format=%h %as \"%s\""
+    OUTPUT_VARIABLE GIT_REVISION
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+    RESULT_VARIABLE GIT_RESULT
+  )
+  if(GIT_RESULT EQUAL 0)
+    string(REPLACE "\"" "\\\"" GIT_REVISION ${GIT_REVISION})
+    add_compile_definitions(GIT_REVISION="${GIT_REVISION}")
+    message(STATUS "GIT_REVISION = \"${GIT_REVISION}\"")
+  endif()
+endif()
+
 add_definitions(-Werror -pedantic)
 
 if(DEBUG_OUT)

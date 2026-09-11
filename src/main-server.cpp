@@ -13,8 +13,10 @@
 using namespace boost;
 
 void print_help(const program_options::options_description &desc) {
-  std::cerr << "Usage:" << std::endl;
   std::cerr << desc;
+#if defined(GIT_REVISION)
+  std::cerr << "Revision: " << GIT_REVISION << std::endl;
+#endif
 }
 
 std::optional<int> parse_opts(int argc, const char *argv[], remy::Config &conf) {
