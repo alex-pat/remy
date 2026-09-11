@@ -3,7 +3,7 @@ include(FetchContent)
 set(FETCHCONTENT_UPDATES_DISCONNECTED TRUE)
 FetchContent_Declare(ftxui
   GIT_REPOSITORY https://github.com/ArthurSonzogni/ftxui
-  GIT_TAG v6.0.2
+  GIT_TAG v7.0.3
 )
 FetchContent_MakeAvailable(ftxui)
 
@@ -15,9 +15,6 @@ add_executable(${REMY_SERVER_TARGET}
 )
 
 target_link_libraries(${REMY_SERVER_TARGET}
-    PRIVATE ftxui::screen
-    PRIVATE ftxui::dom
-    PRIVATE ftxui::component
     PRIVATE Boost::coroutine
     PRIVATE Boost::program_options
 )

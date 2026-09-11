@@ -2,7 +2,7 @@
 
 #include <chrono>
 #include <ftxui/component/component.hpp>
-#include <ftxui/component/screen_interactive.hpp>
+#include <ftxui/component/app.hpp>
 #include <memory>
 
 #include "remy/client.hpp"
@@ -49,7 +49,7 @@ class ClientUi final : public std::enable_shared_from_this<ClientUi>, public Dis
   void reload_info();
 
   std::shared_ptr<ClientNet> m_client;
-  ftxui::ScreenInteractive m_screen;
+  ftxui::App m_screen;
 
   // Style of all buttons
   ftxui::ButtonOption BUTTON_OPTIONS;

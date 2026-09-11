@@ -4,6 +4,7 @@
 #include <boost/asio/ip/tcp.hpp>
 #include <filesystem>
 #include <memory>
+#include <thread>
 
 #include "remy/common.hpp"
 #include "remy/logger.hpp"

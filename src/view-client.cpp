@@ -16,7 +16,7 @@ constexpr size_t LOG_BUF_LEN = 25;
 
 ClientUi::ClientUi(std::shared_ptr<ClientNet> client)
     : m_client(client)
-    , m_screen(ScreenInteractive::Fullscreen()) {
+    , m_screen(App::Fullscreen()) {
   BUTTON_OPTIONS = ButtonOption::Ascii();
   BUTTON_OPTIONS.animated_colors.foreground.Set(Color::Green, Color::GreenLight);
   BUTTON_OPTIONS.animated_colors.background.enabled = true;
