@@ -5,20 +5,35 @@ option(DEBUG_OUT "Print debug output" OFF)
 
 message(STATUS "DEBUG_OUT = ${DEBUG_OUT}")
 
+if("${GIT_REVISION}" STREQUAL "")
+  set(GIT_REVISION "$ENV{GIT_REVISION}")
+endif()
 find_package(Git QUIET)
 if(GIT_FOUND)
+  if("${GIT_REVISION}" STREQUAL "")
+    execute_process(
+      COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_SOURCE_DIR}" show -s "--format=%h %as \"%s\""
+      OUTPUT_VARIABLE GIT_REVISION
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+      ERROR_QUIET
+      RESULT_VARIABLE GIT_RESULT
+    )
+  endif()
   execute_process(
-    COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_SOURCE_DIR}" show -s "--format=%h %as \"%s\""
-    OUTPUT_VARIABLE GIT_REVISION
+    COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_SOURCE_DIR}" status -s
+    OUTPUT_VARIABLE GIT_STATUS
     OUTPUT_STRIP_TRAILING_WHITESPACE
     ERROR_QUIET
     RESULT_VARIABLE GIT_RESULT
   )
-  if(GIT_RESULT EQUAL 0)
-    string(REPLACE "\"" "\\\"" GIT_REVISION ${GIT_REVISION})
-    add_compile_definitions(GIT_REVISION="${GIT_REVISION}")
-    message(STATUS "GIT_REVISION = \"${GIT_REVISION}\"")
+  if(NOT "${GIT_STATUS}" STREQUAL "")
+    string(APPEND GIT_REVISION " (dirty)")
   endif()
+endif()
+if(NOT "${GIT_REVISION}" STREQUAL "")
+  string(REPLACE "\"" "\\\"" GIT_REVISION ${GIT_REVISION})
+  add_compile_definitions(GIT_REVISION="${GIT_REVISION}")
+  message(STATUS "GIT_REVISION = \"${GIT_REVISION}\"")
 endif()
 
 add_definitions(-Werror -pedantic)

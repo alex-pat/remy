@@ -115,6 +115,8 @@ jobs:
               find ~/.termux-build/remy/src/ -type f -not -path "*/CMakeFiles/*" -not -name "*.sh" -exec file {} + | grep -E ": *ELF " | cut -d: -f1 | xargs -I {} strip --strip-unneeded {}
           }
           EOF
+
+          export GIT_REVISION=$(git -C ${GITHUB_WORKSPACE} show -s "--format=%h %as \"%s\"")
           
           # Build the package for aarch64
           ./build-package.sh -I -a ${{ matrix.target_arch }} remy
