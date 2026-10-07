@@ -592,8 +592,16 @@ void statx_to_metainfo(const std::filesystem::path& path, FileMetainfo& out_info
   out_info.uid = statx_info.stx_uid;
   out_info.gid = statx_info.stx_gid;
   out_info.mode = statx_info.stx_mode;
-  out_info.atime = statx_info.stx_atime;
-  out_info.mtime = statx_info.stx_mtime;
+  out_info.atime = {
+      .tv_sec = statx_info.stx_atime.tv_sec,
+      .tv_nsec = statx_info.stx_atime.tv_nsec,
+      .__reserved = statx_info.stx_atime.__reserved,
+  };
+  out_info.mtime = {
+      .tv_sec = statx_info.stx_mtime.tv_sec,
+      .tv_nsec = statx_info.stx_mtime.tv_nsec,
+      .__reserved = statx_info.stx_mtime.__reserved,
+  };
 #else
   struct stat stat_info;
   if (stat(path.c_str(), &stat_info) == -1) {

@@ -171,7 +171,11 @@ class FileLogWriter final : public DistLog::Observer {
   void log(LogLevel level, std::string_view line) override {
     const std::time_t curTime = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     struct tm timeInfo = {};
+#if defined(_WIN32)
+    (void)localtime_s(&timeInfo, &curTime);
+#else
     (void)localtime_r(&curTime, &timeInfo);
+#endif
     std::array<char, 128> timeBuf;
     (void)std::strftime(timeBuf.data(), timeBuf.size(), "%c", &timeInfo);
 

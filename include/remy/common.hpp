@@ -1,15 +1,5 @@
 #pragma once
 
-#if defined(__has_include) && __has_include(<linux/stat.h>)
-#include <linux/stat.h>
-#else
-struct statx_timestamp {
-  int64_t tv_sec;
-  uint32_t tv_nsec;
-  int32_t __reserved;
-};
-#endif
-
 #include <bit>
 #include <boost/asio.hpp>
 #include <boost/asio/experimental/concurrent_channel.hpp>
@@ -17,6 +7,8 @@ struct statx_timestamp {
 #include <cstdint>
 #include <string>
 #include <vector>
+
+#include "remy/utils.hpp"
 
 namespace remy {
 
@@ -109,8 +101,8 @@ struct FileMetainfo {
   uint32_t gid;
   uint16_t mode;
 
-  statx_timestamp atime;
-  statx_timestamp mtime;
+  RemyStatxTimestamp atime;
+  RemyStatxTimestamp mtime;
 };
 
 using ClientId = uint64_t;

@@ -70,13 +70,13 @@ asio::awaitable<void> Server::process_new_connection(tcp::socket&& socket) {
         Log.info("New Browser conn {}", endpoint_name);
         auto token = co_await serde::recv<ServerBrowserToken>(socket);
         auto& channel = get_sockets_chan(m_pending_browsers, token);
-        co_await channel.async_send({}, socket.release(), asio::use_awaitable);
+        co_await channel.async_send({}, std::make_shared<tcp::socket>(std::move(socket)), asio::use_awaitable);
       } break;
       case Copy: {
         Log.info("New Copy conn {}", endpoint_name);
         auto token = co_await serde::recv<CopyToken>(socket);
         auto& channel = get_sockets_chan(m_pending_copy_ops, token);
-        co_await channel.async_send({}, socket.release(), asio::use_awaitable);
+        co_await channel.async_send({}, std::make_shared<tcp::socket>(std::move(socket)), asio::use_awaitable);
       } break;
     }
   } catch (const std::exception& e) {
@@ -325,13 +325,13 @@ asio::awaitable<void> Server::process_browser_conn(ClientId host_id, ClientId re
 
     co_await host->request_browser_host(server_token); // timeout?
 
-    tcp::socket host_socket(ex);
-    host_socket.assign(tcp::v4(), co_await sockets_chan.async_receive(asio::use_awaitable));
+    auto host_socket_ptr = co_await sockets_chan.async_receive(asio::use_awaitable);
+    tcp::socket host_socket = std::move(*host_socket_ptr);
     DBG(Log.trace("got host sock");)
     co_await reader->request_browser_reader(client_token, server_token);
 
-    tcp::socket reader_socket(ex);
-    reader_socket.assign(tcp::v4(), co_await sockets_chan.async_receive(asio::use_awaitable));
+    auto reader_socket_ptr = co_await sockets_chan.async_receive(asio::use_awaitable);
+    tcp::socket reader_socket = std::move(*reader_socket_ptr);
     DBG(Log.trace("got reader sock");)
 
     delete_sockets_chan(m_pending_browsers, server_token);
@@ -381,15 +381,15 @@ asio::awaitable<std::pair<tcp::socket, tcp::socket>> Server::copy_handshake(Remo
   co_await src->request_copy_source(token, std::move(src_info.basedir), std::move(src_info.dentries));
   DBG(Log.trace("sent request to src");)
 
-  tcp::socket src_socket(ex);
-  src_socket.assign(tcp::v4(), co_await sockets_chan.async_receive(asio::use_awaitable));
+  auto src_socket_ptr = co_await sockets_chan.async_receive(asio::use_awaitable);
+  tcp::socket src_socket = std::move(*src_socket_ptr);
   DBG(Log.trace("got src sock");)
 
   co_await dst->request_copy_destination(token, std::move(dst_path));
   DBG(Log.trace("sent request to dst");)
 
-  tcp::socket dst_socket(ex);
-  dst_socket.assign(tcp::v4(), co_await sockets_chan.async_receive(asio::use_awaitable));
+  auto dst_socket_ptr = co_await sockets_chan.async_receive(asio::use_awaitable);
+  tcp::socket dst_socket = std::move(*dst_socket_ptr);
   DBG(Log.trace("got dst sock");)
   co_return std::pair{std::move(src_socket), std::move(dst_socket)};
 }
