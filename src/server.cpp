@@ -1,8 +1,5 @@
 #include "remy/server.hpp"
 
-#include <fcntl.h>
-#include <unistd.h>
-
 #include <boost/asio.hpp>
 #include <boost/asio/any_io_executor.hpp>
 #include <boost/asio/completion_condition.hpp>

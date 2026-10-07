@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - dev
+      - windows-server
   pull_request:
     branches:
       - main
@@ -133,3 +134,50 @@ jobs:
           name: remy-android-${{ matrix.target_arch }}
           path: artifact/
           if-no-files-found: error
+
+  build-windows:
+    name: Build for Windows x86_64
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-boost
+
+      - name: Configure CMake
+        shell: msys2 {0}
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_STANDARD=20 \
+            -DCMAKE_CXX_EXTENSIONS=OFF \
+            -DBUILD_SERVER_ONLY=ON \
+            -DCMAKE_EXE_LINKER_FLAGS="-static -static-libgcc -static-libstdc++"
+
+      - name: Build with CMake
+        shell: msys2 {0}
+        run: cmake --build build --config Release
+
+      - name: Prepare Artifacts for Upload
+        shell: msys2 {0}
+        run: |
+          mkdir -p artifact/
+          cp build/src/remy-server.exe artifact/
+          strip --strip-unneeded artifact/remy-server.exe
+
+      - name: Upload Binaries as Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: remy-windows-x86_64
+          path: artifact/
+          if-no-files-found: error
+

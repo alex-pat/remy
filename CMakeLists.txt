@@ -2,8 +2,10 @@ cmake_minimum_required(VERSION 3.28)
 project(remy LANGUAGES CXX)
 
 option(DEBUG_OUT "Print debug output" OFF)
+option(BUILD_SERVER_ONLY "Build only the server" OFF)
 
 message(STATUS "DEBUG_OUT = ${DEBUG_OUT}")
+message(STATUS "BUILD_SERVER_ONLY = ${BUILD_SERVER_ONLY}")
 
 if("${GIT_REVISION}" STREQUAL "")
   set(GIT_REVISION "$ENV{GIT_REVISION}")

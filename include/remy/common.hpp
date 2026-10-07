@@ -1,6 +1,14 @@
 #pragma once
 
+#if defined(__has_include) && __has_include(<linux/stat.h>)
 #include <linux/stat.h>
+#else
+struct statx_timestamp {
+  int64_t tv_sec;
+  uint32_t tv_nsec;
+  int32_t __reserved;
+};
+#endif
 
 #include <bit>
 #include <boost/asio.hpp>

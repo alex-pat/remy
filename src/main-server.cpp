@@ -1,5 +1,3 @@
-#include <sys/sysinfo.h>
-
 #include <boost/asio.hpp>
 #include <boost/asio/co_spawn.hpp>
 #include <boost/program_options.hpp>
@@ -76,7 +74,7 @@ int main(int argc, const char *argv[]) {
 #if 0
     auto nproc = 1;
 #else
-    auto nproc = get_nprocs();
+    auto nproc = std::max(1u, std::thread::hardware_concurrency());
 #endif
     std::vector<std::jthread> threads;
     for (auto i = 1; i < nproc; i++) {
