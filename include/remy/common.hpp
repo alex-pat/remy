@@ -1,7 +1,5 @@
 #pragma once
 
-#include <linux/stat.h>
-
 #include <bit>
 #include <boost/asio.hpp>
 #include <boost/asio/experimental/concurrent_channel.hpp>
@@ -9,6 +7,8 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+
+#include "remy/utils.hpp"
 
 namespace remy {
 
@@ -101,8 +101,8 @@ struct FileMetainfo {
   uint32_t gid;
   uint16_t mode;
 
-  statx_timestamp atime;
-  statx_timestamp mtime;
+  RemyStatxTimestamp atime;
+  RemyStatxTimestamp mtime;
 };
 
 using ClientId = uint64_t;

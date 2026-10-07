@@ -37,7 +37,7 @@ class Server final : public std::enable_shared_from_this<Server> {
    * connections of these types are sent to corresponding coroutines.
    */
   using NewSocketsChan = boost::asio::experimental::concurrent_channel<void(
-      boost::system::error_code, boost::asio::ip::tcp::socket::native_handle_type &&)>;
+      boost::system::error_code, std::shared_ptr<boost::asio::ip::tcp::socket>)>;
 
  private:
   boost::asio::any_io_executor &m_io_context;
