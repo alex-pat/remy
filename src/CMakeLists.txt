@@ -24,6 +24,7 @@ target_link_libraries(${REMY_SERVER_TARGET}
 if(WIN32)
   target_link_libraries(${REMY_SERVER_TARGET}
     PRIVATE ws2_32
+    PRIVATE mswsock
   )
 endif()
 
