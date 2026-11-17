@@ -11,7 +11,10 @@
 
 #include "remy/client.hpp"
 #include "remy/logger.hpp"
-#include "remy/view-client.hpp"
+#include "remy/view-client-noui.hpp"
+#ifndef BUILD_CLIENT_NOUI_ONLY
+#include "remy/view-client-tui.hpp"
+#endif
 
 using namespace boost;
 
@@ -22,18 +25,21 @@ void print_help(const program_options::options_description &desc) {
 #endif
 }
 
-std::optional<int> parse_opts(int argc, const char *argv[], remy::Config &conf) {
+std::optional<int> parse_opts(int argc, const char *argv[], remy::Config &conf, bool &noui) {
   using namespace boost::program_options;
   options_description desc{"Remy client"};
   std::string dir;
 
   // clang-format off
-  desc.add_options()
+  auto opts = desc.add_options()
       ("help,h", "Help screen")
       ("addr,a", value<std::string>(&conf.addr)->default_value("127.0.0.1"), "Addr")
       ("port,p", value<uint16_t>(&conf.port)->default_value(remy::REMY_DEFAULT_PORT), "Port")
       ("dir,C", value<std::string>(&dir), "Directory")
       ("log-file,o", value<std::string>(&conf.log_path), "Log file");
+#ifndef BUILD_CLIENT_NOUI_ONLY
+  opts("noui", bool_switch(&noui), "Run in headless mode without TUI");
+#endif
   // clang-format on
 
   parsed_options parsed_options = command_line_parser{argc, argv}.options(desc).allow_unregistered().run();
@@ -62,7 +68,12 @@ std::optional<int> parse_opts(int argc, const char *argv[], remy::Config &conf) 
 int main(int argc, const char *argv[]) {
   try {
     remy::Config conf;
-    if (auto ret = parse_opts(argc, argv, conf); ret.has_value()) {
+#ifdef BUILD_CLIENT_NOUI_ONLY
+    bool noui = true;
+#else
+    bool noui = false;
+#endif
+    if (auto ret = parse_opts(argc, argv, conf, noui); ret.has_value()) {
       return *ret;
     }
 
@@ -74,9 +85,18 @@ int main(int argc, const char *argv[]) {
 
     auto client_net = std::make_shared<remy::ClientNet>(conf);
 
-    auto ui = std::make_shared<remy::ClientUi>(client_net);
-
-    remy::Log.addObserver(ui);
+    std::shared_ptr<remy::IClientUI> ui;
+    auto cout_log = std::make_shared<remy::CoutLogWriter>();
+    if (noui) {
+      remy::Log.addObserver(cout_log);
+      ui = std::make_shared<remy::ClientNoUI>(client_net);
+    } else {
+#ifndef BUILD_CLIENT_NOUI_ONLY
+      auto tui = std::make_shared<remy::ClientTUI>(client_net);
+      remy::Log.addObserver(tui);
+      ui = tui;
+#endif
+    }
 
     auto l = remy::Log.guard("Remy client");
 

@@ -8,29 +8,30 @@
 #include "remy/client.hpp"
 #include "remy/common.hpp"
 #include "remy/logger.hpp"
+#include "remy/view-client-iface.hpp"
 
 namespace remy {
 using namespace std::chrono_literals;
 
 class ClientNet;
 
-class ClientUi final : public std::enable_shared_from_this<ClientUi>, public DistLog::Observer {
+class ClientTUI final : public IClientUI, public DistLog::Observer {
  public:
-  ClientUi(std::shared_ptr<ClientNet> client);
-  ~ClientUi() override;
+  ClientTUI(std::shared_ptr<ClientNet> client);
+  ~ClientTUI() override;
 
-  void run();
+  void run() override;
 
   // Functions called by ClientNet
-  void update_clients(const ClientsListPayload &clients);
-  void update_name(ClientName &&name);
-  void show_dents(UiBrowserId id, PathDentsPayload &&path);
-  void show_warning(std::string &&err_msg);
-  void critical_error(std::string &&err_msg);
-  void browser_error(UiBrowserId);
-  void update_watcher_info(std::optional<WatcherInfo> &&info);
-  void show_delete_result(std::string &&msg);
-  void show_mkdir_result(std::string &&msg);
+  void update_clients(const ClientsListPayload &clients) override;
+  void update_name(ClientName &&name) override;
+  void show_dents(UiBrowserId id, PathDentsPayload &&path) override;
+  void show_warning(std::string &&err_msg) override;
+  void critical_error(std::string &&err_msg) override;
+  void browser_error(UiBrowserId) override;
+  void update_watcher_info(std::optional<WatcherInfo> &&info) override;
+  void show_delete_result(std::string &&msg) override;
+  void show_mkdir_result(std::string &&msg) override;
 
   void log(LogLevel, std::string_view) override;
 

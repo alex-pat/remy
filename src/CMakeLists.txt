@@ -1,5 +1,5 @@
 
-if(NOT BUILD_SERVER_ONLY)
+if(NOT BUILD_SERVER_ONLY AND NOT BUILD_CLIENT_NOUI_ONLY)
   include(FetchContent)
   set(FETCHCONTENT_UPDATES_DISCONNECTED TRUE)
   FetchContent_Declare(ftxui
@@ -33,20 +33,37 @@ set(INSTALL_TARGETS ${REMY_SERVER_TARGET})
 # Client
 if(NOT BUILD_SERVER_ONLY)
   set(REMY_CLIENT_TARGET remy-client)
-  add_executable(${REMY_CLIENT_TARGET}
+
+  set(REMY_CLIENT_SOURCES
       main-client.cpp
-      view-client.cpp
+      view-client-noui.cpp
       client.cpp
       sys-linux.cpp
   )
 
+  if(BUILD_CLIENT_NOUI_ONLY)
+    add_compile_definitions(BUILD_CLIENT_NOUI_ONLY)
+  else()
+    list(APPEND REMY_CLIENT_SOURCES view-client-tui.cpp)
+  endif()
+
+  add_executable(${REMY_CLIENT_TARGET}
+      ${REMY_CLIENT_SOURCES}
+  )
+
   target_link_libraries(${REMY_CLIENT_TARGET}
-      PRIVATE ftxui::screen
-      PRIVATE ftxui::dom
-      PRIVATE ftxui::component
       PRIVATE Boost::coroutine
       PRIVATE Boost::program_options
   )
+
+  if(NOT BUILD_CLIENT_NOUI_ONLY)
+    target_link_libraries(${REMY_CLIENT_TARGET}
+        PRIVATE ftxui::screen
+        PRIVATE ftxui::dom
+        PRIVATE ftxui::component
+    )
+  endif()
+
   list(APPEND INSTALL_TARGETS ${REMY_CLIENT_TARGET})
 endif()
 

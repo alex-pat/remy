@@ -3,9 +3,11 @@ project(remy LANGUAGES CXX)
 
 option(DEBUG_OUT "Print debug output" OFF)
 option(BUILD_SERVER_ONLY "Build only the server" OFF)
+option(BUILD_CLIENT_NOUI_ONLY "Build client without TUI" OFF)
 
 message(STATUS "DEBUG_OUT = ${DEBUG_OUT}")
 message(STATUS "BUILD_SERVER_ONLY = ${BUILD_SERVER_ONLY}")
+message(STATUS "BUILD_CLIENT_NOUI_ONLY = ${BUILD_CLIENT_NOUI_ONLY}")
 
 if("${GIT_REVISION}" STREQUAL "")
   set(GIT_REVISION "$ENV{GIT_REVISION}")

@@ -126,6 +126,7 @@ tags
 # End of https://www.toptal.com/developers/gitignore/api/c++,emacs,vim,cmake
 
 build/
+build-noui/
 .cache/
 build-gcc/
 build-nolog/

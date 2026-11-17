@@ -1,4 +1,4 @@
-#include "remy/view-client.hpp"
+#include "remy/view-client-tui.hpp"
 
 #include <ftxui/component/component_options.hpp>
 #include <ftxui/dom/elements.hpp>
@@ -14,7 +14,7 @@ using namespace ftxui;
 
 constexpr size_t LOG_BUF_LEN = 25;
 
-ClientUi::ClientUi(std::shared_ptr<ClientNet> client)
+ClientTUI::ClientTUI(std::shared_ptr<ClientNet> client)
     : m_client(client)
     , m_screen(App::Fullscreen()) {
   BUTTON_OPTIONS = ButtonOption::Ascii();
@@ -22,7 +22,7 @@ ClientUi::ClientUi(std::shared_ptr<ClientNet> client)
   BUTTON_OPTIONS.animated_colors.background.enabled = true;
 }
 
-ClientUi::~ClientUi() { m_client->stop(); }
+ClientTUI::~ClientTUI() { m_client->stop(); }
 
 namespace {
 /** Helper function. Creates pretty colored name for dir/symlink/executable */
@@ -58,7 +58,7 @@ Element right_text(const FileMetainfo &meta) {
 }
 }  // namespace
 
-void ClientUi::run() {
+void ClientTUI::run() {
   auto main_container = create_main_container();
 
   main_container |= create_modal_help();
@@ -84,7 +84,7 @@ void ClientUi::run() {
   m_client->stop();
 }
 
-void ClientUi::create_panels() {
+void ClientTUI::create_panels() {
   m_panels_components.reserve(m_panels.size());
   UiBrowserId browser_id = 0;
   for (auto &pnl : m_panels) {
@@ -209,7 +209,7 @@ void ClientUi::create_panels() {
   }
 }
 
-Component ClientUi::create_main_container() {
+Component ClientTUI::create_main_container() {
   create_panels();
 
   m_split_size = Terminal::Size().dimx / 2;
@@ -350,7 +350,7 @@ Component ClientUi::create_main_container() {
   return main_container;
 }
 
-ComponentDecorator ClientUi::create_modal_help() {
+ComponentDecorator ClientTUI::create_modal_help() {
   auto help = gridbox({
       {text("hjkl / Arrows") | align_right, separatorEmpty(), text("Browsing (mouse scroll also works)")},
       {text("Enter / Double click") | align_right, separatorEmpty(), text("Enter directory / client")},
@@ -383,7 +383,7 @@ ComponentDecorator ClientUi::create_modal_help() {
   return Modal(win, &m_show_help);
 }
 
-ComponentDecorator ClientUi::create_modal_new_name() {
+ComponentDecorator ClientTUI::create_modal_new_name() {
   auto apply_new_name = [this] {
     utils::trim_end(m_name_modal.new_name);
     m_client->set_new_name(m_name_modal.new_name);
@@ -407,7 +407,7 @@ ComponentDecorator ClientUi::create_modal_new_name() {
   return Modal(name_modal, &m_name_modal.is_shown);
 }
 
-ComponentDecorator ClientUi::create_modal_warning() {
+ComponentDecorator ClientTUI::create_modal_warning() {
   auto warning = Button(
       "Ok", [this] { m_warning_modal.is_shown = false; }, BUTTON_OPTIONS);
   warning |= Renderer([this](Element inner) {
@@ -418,7 +418,7 @@ ComponentDecorator ClientUi::create_modal_warning() {
   return Modal(warning, &m_warning_modal.is_shown);
 }
 
-ComponentDecorator ClientUi::create_modal_crit_err() {
+ComponentDecorator ClientTUI::create_modal_crit_err() {
   auto critical_error_modal = Button(
       "Exit", [this] { m_screen.Exit(); }, BUTTON_OPTIONS);
   critical_error_modal |= Renderer([this](Element inner) {
@@ -429,7 +429,7 @@ ComponentDecorator ClientUi::create_modal_crit_err() {
   return Modal(critical_error_modal, &m_critical_error_modal.is_shown);
 }
 
-ComponentDecorator ClientUi::create_modal_copy() {
+ComponentDecorator ClientTUI::create_modal_copy() {
   auto copy_modal = Container::Tab(
       {
           // Dialog of choosing direction and confirming
@@ -556,7 +556,7 @@ ComponentDecorator ClientUi::create_modal_copy() {
   return Modal(copy_modal, &m_copy_modal.is_shown);
 }
 
-void ClientUi::reload_info() {
+void ClientTUI::reload_info() {
   m_client->request_clients_list();
   // Reload current dirs
   for (UiBrowserId id = 0; id < m_panels.size(); id++) {
@@ -572,7 +572,7 @@ void ClientUi::reload_info() {
  * Note: lambdas passed to `m_screen.Post` are called inside main UI loop so it doesn't need any locks
  */
 
-void ClientUi::update_clients(const ClientsListPayload &clients) {
+void ClientTUI::update_clients(const ClientsListPayload &clients) {
   m_screen.Post([this, clients] {
     Log.info("Got clients list");
     m_clients.ids.clear();
@@ -587,7 +587,7 @@ void ClientUi::update_clients(const ClientsListPayload &clients) {
   m_screen.Post(Event::Custom);
 }
 
-void ClientUi::update_name(ClientName &&name) {
+void ClientTUI::update_name(ClientName &&name) {
   m_screen.Post([this, new_name = std::move(name)] {
     Log.info("Name updated");
     m_pretty_name = std::format("Client name: {}", new_name);
@@ -595,7 +595,7 @@ void ClientUi::update_name(ClientName &&name) {
   m_screen.Post(Event::Custom);
 }
 
-void ClientUi::show_warning(std::string &&err_msg) {
+void ClientTUI::show_warning(std::string &&err_msg) {
   m_screen.Post([this, msg = std::move(err_msg)]() mutable {
     m_warning_modal.message = std::move(msg);
     m_warning_modal.is_shown = true;
@@ -603,7 +603,7 @@ void ClientUi::show_warning(std::string &&err_msg) {
   m_screen.Post(Event::Custom);
 }
 
-void ClientUi::critical_error(std::string &&err_msg) {
+void ClientTUI::critical_error(std::string &&err_msg) {
   m_screen.Post([this, msg = std::move(err_msg)]() mutable {
     m_critical_error_modal.message = std::move(msg);
     m_critical_error_modal.is_shown = true;
@@ -611,7 +611,7 @@ void ClientUi::critical_error(std::string &&err_msg) {
   m_screen.Post(Event::Custom);
 }
 
-void ClientUi::browser_error(UiBrowserId id) {
+void ClientTUI::browser_error(UiBrowserId id) {
   m_screen.Post([this, id] {
     auto &panel = m_panels[id];
     m_warning_modal.message = std::format("Client {} unexpectedly disconnected", panel.m_browser.m_name);
@@ -621,7 +621,7 @@ void ClientUi::browser_error(UiBrowserId id) {
   m_screen.Post(Event::Custom);
 }
 
-void ClientUi::show_dents(UiBrowserId id, PathDentsPayload &&payload) {
+void ClientTUI::show_dents(UiBrowserId id, PathDentsPayload &&payload) {
   m_screen.Post([this, id, payload = std::move(payload)]() mutable {
     auto &panel = m_panels[id];
     auto &browser = panel.m_browser;
@@ -663,7 +663,7 @@ void ClientUi::show_dents(UiBrowserId id, PathDentsPayload &&payload) {
   m_screen.Post(Event::Custom);
 }
 
-RemoteDentries ClientUi::Panel::Browser::collect_selected_dentries() const {
+RemoteDentries ClientTUI::Panel::Browser::collect_selected_dentries() const {
   RemoteDentries entries = {m_client_id, m_cwd.string(), {}};
 
   // Collect explicitly selected files (starting from index 1 to skip "..")
@@ -687,7 +687,7 @@ RemoteDentries ClientUi::Panel::Browser::collect_selected_dentries() const {
 }
 
 /** Calculates `RemoteDentries` for copy. To change direction, call it again */
-void ClientUi::copy_dialog_payload() {
+void ClientTUI::copy_dialog_payload() {
   if (m_panels[0].m_view_selected != Panel::PANEL_BROWSER || m_panels[1].m_view_selected != Panel::PANEL_BROWSER) {
     Log.warn("Two clients must be opened to be able to copy");
     return;
@@ -737,7 +737,7 @@ void ClientUi::copy_dialog_payload() {
   m_copy_modal.is_shown = true;
 }
 
-void ClientUi::update_watcher_info(std::optional<WatcherInfo> &&info) {
+void ClientTUI::update_watcher_info(std::optional<WatcherInfo> &&info) {
   m_screen.Post([this, new_info = std::move(info)]() mutable {
     if (new_info.has_value()) {
       auto &info = m_copy_modal.progress_info;
@@ -755,7 +755,7 @@ void ClientUi::update_watcher_info(std::optional<WatcherInfo> &&info) {
   m_screen.Post(Event::Custom);
 }
 
-void ClientUi::delete_dialog_payload() {
+void ClientTUI::delete_dialog_payload() {
   UiBrowserId id = m_panels_components[0]->Focused() ? 0 : 1;
   auto &panel = m_panels[id];
   if (panel.m_view_selected != Panel::PANEL_BROWSER) {
@@ -774,7 +774,7 @@ void ClientUi::delete_dialog_payload() {
   m_delete_modal.is_shown = true;
 }
 
-ComponentDecorator ClientUi::create_modal_delete() {
+ComponentDecorator ClientTUI::create_modal_delete() {
   auto delete_modal = Container::Tab(
       {
           // Confirmation dialog
@@ -827,7 +827,7 @@ ComponentDecorator ClientUi::create_modal_delete() {
   return Modal(delete_modal, &m_delete_modal.is_shown);
 }
 
-void ClientUi::show_delete_result(std::string &&msg) {
+void ClientTUI::show_delete_result(std::string &&msg) {
   m_screen.Post([this, msg = std::move(msg)]() mutable {
     m_delete_modal.result_msg = std::move(msg);
     m_delete_modal.state = DeleteModal::RESULT;
@@ -835,7 +835,7 @@ void ClientUi::show_delete_result(std::string &&msg) {
   m_screen.Post(Event::Custom);
 }
 
-void ClientUi::mkdir_dialog_payload() {
+void ClientTUI::mkdir_dialog_payload() {
   UiBrowserId id = m_panels_components[0]->Focused() ? 0 : 1;
   auto &panel = m_panels[id];
   if (panel.m_view_selected != Panel::PANEL_BROWSER) {
@@ -850,7 +850,7 @@ void ClientUi::mkdir_dialog_payload() {
   m_mkdir_modal.is_shown = true;
 }
 
-ComponentDecorator ClientUi::create_modal_mkdir() {
+ComponentDecorator ClientTUI::create_modal_mkdir() {
   auto apply_mkdir = [this] {
     utils::trim_end(m_mkdir_modal.name);
     if (m_mkdir_modal.name.empty()) {
@@ -907,7 +907,7 @@ ComponentDecorator ClientUi::create_modal_mkdir() {
   return Modal(mkdir_modal, &m_mkdir_modal.is_shown);
 }
 
-void ClientUi::show_mkdir_result(std::string &&msg) {
+void ClientTUI::show_mkdir_result(std::string &&msg) {
   m_screen.Post([this, msg = std::move(msg)]() mutable {
     m_mkdir_modal.result_msg = std::move(msg);
     m_mkdir_modal.state = MkdirModal::RESULT;
@@ -915,7 +915,7 @@ void ClientUi::show_mkdir_result(std::string &&msg) {
   m_screen.Post(Event::Custom);
 }
 
-void ClientUi::log(LogLevel level, std::string_view line) {
+void ClientTUI::log(LogLevel level, std::string_view line) {
   auto elem = paragraph(std::string(line));
   switch (level) {
     using enum LogLevel;

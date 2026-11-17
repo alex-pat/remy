@@ -35,7 +35,7 @@ ClientNet::ClientNet(const Config& conf)
   std::srand(std::time({}));
 }
 
-void ClientNet::run(std::weak_ptr<ClientUi> ui) {
+void ClientNet::run(std::weak_ptr<IClientUI> ui) {
   m_ui = ui;
 
   asio::co_spawn(m_io_context, run_control_coro(), asio::detached);
@@ -338,12 +338,13 @@ void ClientNet::BrowserReader::request_mkdir(const std::string& basedir, const s
 
 asio::awaitable<void> ClientNet::run_browser_host_coro(ServerBrowserToken serv_token) {
   try {
+    Log.info("BrowserHost: started");
     m_browser_hosts_count++;
     BrowserHost browser(m_io_context, m_ui, serv_token);
     co_await browser.connect(m_endpoint);
 
     co_await (browser.incoming_msg() || browser.outcoming_msg());
-    Log.trace("BrowserHost: stopped");
+    Log.info("BrowserHost: stopped");
   } catch (const std::exception& e) {
     auto msg = Log.warn("BrowserHost: {}", e.what());
     m_ui.lock()->show_warning(std::move(msg));

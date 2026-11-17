@@ -8,18 +8,18 @@
 
 #include "remy/common.hpp"
 #include "remy/logger.hpp"
-#include "remy/view-client.hpp"
+#include "remy/view-client-iface.hpp"
 
 namespace remy {
 
-class ClientUi;
+class IClientUI;
 
 /** Network-related part of client logic */
 class ClientNet final : public std::enable_shared_from_this<ClientNet> {
  public:
   explicit ClientNet(const Config &conf);
 
-  void run(std::weak_ptr<ClientUi> ui);
+  void run(std::weak_ptr<IClientUI> ui);
   void stop();
 
   void request_clients_list();
@@ -47,7 +47,7 @@ class ClientNet final : public std::enable_shared_from_this<ClientNet> {
   boost::asio::ip::tcp::endpoint m_endpoint;
   boost::asio::ip::tcp::socket m_control_sock;
   std::jthread m_net_thread;  // Thread where async executor runs
-  std::weak_ptr<ClientUi> m_ui;
+  std::weak_ptr<IClientUI> m_ui;
 
   std::mutex m_mtx;
   ClientId m_id;
@@ -59,7 +59,7 @@ class ClientNet final : public std::enable_shared_from_this<ClientNet> {
   boost::asio::awaitable<void> run_browser_reader_coro(ClientBrowserToken client_token, ServerBrowserToken serv_token);
   class BrowserReader {
    public:
-    explicit BrowserReader(UiBrowserId browser, boost::asio::io_context &ctx, std::weak_ptr<ClientUi> ui,
+    explicit BrowserReader(UiBrowserId browser, boost::asio::io_context &ctx, std::weak_ptr<IClientUI> ui,
                            ServerBrowserToken token)
         : m_browser_id(browser)
         , m_ui(ui)
@@ -77,7 +77,7 @@ class ClientNet final : public std::enable_shared_from_this<ClientNet> {
 
    private:
     UiBrowserId m_browser_id;
-    std::weak_ptr<ClientUi> m_ui;
+    std::weak_ptr<IClientUI> m_ui;
     ServerBrowserToken m_token;
     boost::asio::ip::tcp::socket m_socket;
     SendsChannel m_send_requests;
@@ -89,7 +89,7 @@ class ClientNet final : public std::enable_shared_from_this<ClientNet> {
   boost::asio::awaitable<void> run_browser_host_coro(ServerBrowserToken serv_token);
   class BrowserHost {
    public:
-    explicit BrowserHost(boost::asio::io_context &ctx, std::weak_ptr<ClientUi> ui, ServerBrowserToken token)
+    explicit BrowserHost(boost::asio::io_context &ctx, std::weak_ptr<IClientUI> ui, ServerBrowserToken token)
         : m_ui(ui)
         , m_token(token)
         , m_socket(ctx)
@@ -100,7 +100,7 @@ class ClientNet final : public std::enable_shared_from_this<ClientNet> {
     boost::asio::awaitable<void> incoming_msg();
 
    private:
-    std::weak_ptr<ClientUi> m_ui;
+    std::weak_ptr<IClientUI> m_ui;
     ServerBrowserToken m_token;
     boost::asio::ip::tcp::socket m_socket;
     SendsChannel m_send_requests;
