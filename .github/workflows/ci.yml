@@ -171,8 +171,8 @@ jobs:
         shell: msys2 {0}
         run: |
           mkdir -p artifact/
-          cp build/src/remy-server.exe artifact/
-          strip --strip-unneeded artifact/remy-server.exe
+          cp build/src/*.exe artifact/
+          strip --strip-unneeded artifact/*.exe
 
       - name: Upload Binaries as Artifact
         uses: actions/upload-artifact@v7
